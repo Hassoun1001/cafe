@@ -64,15 +64,60 @@ environment before running `npm start`. Run `npm run db:deploy` (applies
 migrations non-interactively via `prisma migrate deploy`) against the
 production database before first boot.
 
-## Deploying to Railway
+## Deploying for free (Render + Neon)
+
+This is the recommended free path — $0/month, no credit card required. The
+tradeoff: Render's free web services "sleep" after ~15 minutes with no
+traffic, so the first request after a quiet period takes 30-60 seconds to
+wake up. Fine for a cafe that isn't taking orders 24/7; if that wake delay
+ever becomes a problem, the same `render.yaml` works unchanged on Render's
+$7/month "Starter" plan (no more sleeping), or see the Railway alternative
+below.
+
+**1. Create the free database (Neon)**
+1. Sign up at [neon.tech](https://neon.tech) (free, no card) and create a project.
+2. Open the project's **Connection Details** and copy the connection string
+   (it already includes `?sslmode=require`, which Prisma needs). Keep this
+   handy for step 2 below.
+
+**2. Push this repo to GitHub**
+This repo is already a local git repository with everything committed. Create
+an empty repository on [github.com/new](https://github.com/new) (don't
+initialize it with a README), then:
+```
+git remote add origin <your-new-repo-url>
+git push -u origin main
+```
+
+**3. Deploy on Render**
+1. Sign up at [render.com](https://render.com) (free, no card) and connect
+   your GitHub account.
+2. New → **Blueprint**, pick this repo. Render will read `render.yaml` at the
+   repo root and pre-fill the service (build command, start command, health
+   check, and a freshly generated `JWT_SECRET`) — you only need to fill in
+   one thing:
+   - `DATABASE_URL` → paste the Neon connection string from step 1.
+3. Click **Apply**. Render will run `npm install --include=dev && npm run build`,
+   then start the service with `npm run db:deploy && npm run db:seed && npm start` —
+   this applies all migrations and seeds the initial menu/stock/employees/tables
+   automatically on first boot (both steps are safe to re-run on every restart,
+   they skip anything already applied/present).
+4. Once the deploy finishes, open the Render-assigned URL. Log in with the
+   seeded default password **`01090703`** and change it immediately from
+   Settings → Security.
+
+No CORS configuration is needed — the same Render service serves both the
+built frontend and the `/api/*` backend from one origin.
+
+## Deploying to Railway (paid, ~$5/month, no sleep)
 
 1. Create a new Railway project, add a **PostgreSQL** plugin — copy its
    `DATABASE_URL` (Railway calls it `DATABASE_URL` too, connect the service to
    it via a shared variable).
 2. Add a service from this repo. Because it's an npm-workspaces monorepo,
    set:
-   - **Build command**: `npm install && npm run build`
-   - **Start command**: `npm start`
+   - **Build command**: `npm install --include=dev && npm run build`
+   - **Start command**: `npm run db:deploy && npm run db:seed && npm start`
    - Railway's Nixpacks builder auto-detects Node from `package.json`; no
      Dockerfile is required.
 3. Environment variables on the Railway service:
@@ -80,13 +125,7 @@ production database before first boot.
    - `DATABASE_URL` (reference the Postgres plugin's variable)
    - `JWT_SECRET` (generate a long random string — do **not** reuse the dev value)
    - `PORT` (Railway sets this automatically; the app reads `process.env.PORT`)
-4. After the first deploy, run once (Railway shell or a one-off deploy hook):
-   ```
-   npm run db:deploy
-   npm run db:seed
-   ```
-   (or wire these into a Railway "release" command).
-5. Visit the Railway-assigned URL — the same origin serves both the app and
+4. Visit the Railway-assigned URL — the same origin serves both the app and
    the API, so no CORS configuration is needed in production.
 
 ## Notable features
