@@ -1,0 +1,19 @@
+{
+  "name": "studio-cafe-system",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "build": "npm run build --workspace frontend && npm run build --workspace backend",
+    "start": "npm run start --workspace backend",
+    "db:migrate": "npm run prisma:migrate --workspace backend",
+    "db:deploy": "npm run prisma:deploy --workspace backend",
+    "db:seed": "npm run db:seed --workspace backend",
+    "db:studio": "npm run prisma:studio --workspace backend"
+  }
+}

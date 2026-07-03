@@ -1,0 +1,263 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  OPEN
+  PAID
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+}
+
+enum StockAdjustReason {
+  RESTOCK
+  MANUAL_SET
+  MANUAL_DELTA
+  TRACKER_CORRECTION
+  SALE
+}
+
+enum ConsumptionType {
+  FREE
+  DEDUCT
+}
+
+// Singleton row (single shared cafe-wide config, matches the single shared login).
+model AppConfig {
+  id            String   @id @default(uuid())
+  passwordHash  String
+  receiptName   String   @default("Studio Cafe")
+  receiptFooter String   @default("Thank you! Focus. Connect. Inspire.")
+  currency      String   @default("SYP")
+  updatedAt     DateTime @updatedAt
+}
+
+// A named, independently-toggleable tax. `compound` taxes are calculated on
+// top of the previously-applied tax's amount instead of the bill subtotal
+// (e.g. a 10% surcharge on the VAT amount itself, not on the sale) — see
+// recomputeTotals in orders.service.ts for the exact algorithm.
+model TaxRate {
+  id         String     @id @default(uuid())
+  name       String     @unique
+  percent    Decimal    @db.Decimal(5, 2)
+  compound   Boolean    @default(false)
+  defaultOn  Boolean    @default(false)
+  active     Boolean    @default(true)
+  sortOrder  Int        @default(0)
+  orderTaxes OrderTax[]
+  createdAt  DateTime   @default(now())
+}
+
+model MenuCategory {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  sortOrder Int        @default(0)
+  items     MenuItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model MenuItem {
+  id          String               @id @default(uuid())
+  name        String
+  nameAr      String?
+  sub         String               @default("")
+  price       Decimal              @default(0) @db.Decimal(12, 2)
+  active      Boolean              @default(true)
+  sortOrder   Int                  @default(0)
+  categoryId  String
+  category    MenuCategory         @relation(fields: [categoryId], references: [id])
+  orderItems  OrderItem[]
+  ingredients MenuItemIngredient[]
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([categoryId])
+}
+
+// Recipe / bill-of-materials: how much of a stock item one unit of a menu
+// item consumes. Selling the menu item deducts qtyPerUnit * qty from stock
+// (see applyStockForLineDelta in orders.service.ts). Items with no rows here
+// simply don't deduct anything — recipes are opt-in per item.
+model MenuItemIngredient {
+  id          String    @id @default(uuid())
+  menuItemId  String
+  menuItem    MenuItem  @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  stockItemId String
+  stockItem   StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  qtyPerUnit  Decimal   @db.Decimal(12, 3)
+  createdAt   DateTime  @default(now())
+
+  @@unique([menuItemId, stockItemId])
+  @@index([menuItemId])
+  @@index([stockItemId])
+}
+
+model CafeTable {
+  id        String   @id @default(uuid())
+  number    Int      @unique
+  label     String?
+  active    Boolean  @default(true)
+  orders    Order[]
+  createdAt DateTime @default(now())
+}
+
+model Order {
+  id              String         @id @default(uuid())
+  orderNumber     Int            @unique @default(autoincrement())
+  tableId         String
+  table           CafeTable      @relation(fields: [tableId], references: [id])
+  status          OrderStatus    @default(OPEN)
+  items           OrderItem[]
+  taxes           OrderTax[]
+  subtotal        Decimal        @default(0) @db.Decimal(12, 2)
+  discountPercent Decimal        @default(0) @db.Decimal(5, 2)
+  discountAmount  Decimal        @default(0) @db.Decimal(12, 2)
+  taxAmount       Decimal        @default(0) @db.Decimal(12, 2)
+  total           Decimal        @default(0) @db.Decimal(12, 2)
+  paymentMethod   PaymentMethod?
+  cashReceived    Decimal?       @db.Decimal(12, 2)
+  changeGiven     Decimal?       @db.Decimal(12, 2)
+  openedAt        DateTime       @default(now())
+  closedAt        DateTime?
+
+  @@index([tableId])
+  @@index([status])
+  @@index([openedAt])
+}
+
+// A tax applied to one order. Snapshots name/percent/compound/sortOrder from
+// TaxRate at the time it's toggled on, so historical receipts stay accurate
+// even if the tax catalog changes later. `amount` is recomputed whenever the
+// order's items/discount/taxes change (recomputeTotals).
+model OrderTax {
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  taxRateId String?
+  taxRate   TaxRate? @relation(fields: [taxRateId], references: [id])
+  name      String
+  percent   Decimal  @db.Decimal(5, 2)
+  compound  Boolean  @default(false)
+  sortOrder Int      @default(0)
+  amount    Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+
+  @@unique([orderId, taxRateId])
+  @@index([orderId])
+}
+
+model OrderItem {
+  id            String    @id @default(uuid())
+  orderId       String
+  order         Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId    String?
+  menuItem      MenuItem? @relation(fields: [menuItemId], references: [id])
+  nameSnapshot  String
+  priceSnapshot Decimal   @db.Decimal(12, 2)
+  qty           Int
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Enforces one line per menu item per order at the DB level, so addItem's
+  // upsert (increment qty) is atomic even under concurrent double-taps —
+  // no read-then-write race that could otherwise create duplicate lines.
+  @@unique([orderId, menuItemId])
+  @@index([orderId])
+}
+
+model StockItem {
+  id            String               @id @default(uuid())
+  name          String               @unique
+  nameAr        String?
+  category      String
+  unit          String
+  qty           Decimal              @default(0) @db.Decimal(12, 3)
+  minQty        Decimal              @default(0) @db.Decimal(12, 3)
+  costPerUnit   Decimal              @default(0) @db.Decimal(12, 2)
+  adjustments   StockAdjustment[]
+  counts        StockCount[]
+  usedInRecipes MenuItemIngredient[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+}
+
+// Not a foreign key on StockItem.category/unit — those stay plain strings so
+// removing an entry here never touches existing stock rows, it only changes
+// what's offered in the Warehouse "Add item" dropdowns going forward.
+model StockCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model StockUnit {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model StockAdjustment {
+  id           String            @id @default(uuid())
+  stockItemId  String
+  stockItem    StockItem         @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  delta        Decimal           @db.Decimal(12, 3)
+  resultingQty Decimal           @db.Decimal(12, 3)
+  reason       StockAdjustReason
+  note         String?
+  createdAt    DateTime          @default(now())
+
+  @@index([stockItemId])
+}
+
+model StockCount {
+  id          String    @id @default(uuid())
+  stockItemId String
+  stockItem   StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  systemQty   Decimal   @db.Decimal(12, 3)
+  physicalQty Decimal   @db.Decimal(12, 3)
+  diff        Decimal   @db.Decimal(12, 3)
+  countedAt   DateTime  @default(now())
+
+  @@index([stockItemId])
+}
+
+model Employee {
+  id           String                @id @default(uuid())
+  name         String
+  nameAr       String?
+  active       Boolean               @default(true)
+  consumptions EmployeeConsumption[]
+  createdAt    DateTime              @default(now())
+}
+
+model EmployeeConsumption {
+  id         String          @id @default(uuid())
+  employeeId String
+  employee   Employee        @relation(fields: [employeeId], references: [id])
+  itemName   String
+  price      Decimal         @db.Decimal(12, 2)
+  type       ConsumptionType
+  createdAt  DateTime        @default(now())
+
+  @@index([employeeId])
+}
+
+model DiscountPreset {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  percent   Decimal  @db.Decimal(5, 2)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}

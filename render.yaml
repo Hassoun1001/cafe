@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: studio-cafe
+    env: node
+    plan: free
+    buildCommand: npm install --include=dev && npm run build
+    # migrate deploy + seed are both idempotent (skip anything already applied/present),
+    # so it's safe to run them on every boot instead of needing a separate release step —
+    # this also means Render's free-tier cold-start-from-sleep reboots stay correct.
+    startCommand: npm run db:deploy && npm run db:seed && npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 12h
+      - key: DATABASE_URL
+        sync: false
