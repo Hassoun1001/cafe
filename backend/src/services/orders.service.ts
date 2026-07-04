@@ -4,6 +4,8 @@ import { toNum, round2 } from '../lib/decimal';
 import { badRequest, notFound } from '../lib/errors';
 import { applyStockForMenuItemSale } from './stock.service';
 
+type TxClient = Prisma.TransactionClient;
+
 const orderInclude = {
   items: true,
   table: true,
@@ -46,6 +48,19 @@ function serializeOrder(order: OrderWithRelations) {
   };
 }
 
+// recomputeTotals reads the full item/tax list and writes an absolute
+// subtotal/total — without this, concurrent mutations on the same order
+// (e.g. a cashier tapping several different menu items in quick succession,
+// before the previous request has resolved) can interleave: each transaction
+// computes its total from a snapshot that doesn't yet include the other's
+// still-uncommitted write, and whichever commits last clobbers the other's
+// total. Locking the order row for the duration of the transaction forces
+// concurrent mutations on the same order to serialize instead of race —
+// same category of fix as the earlier stock adjustStock lost-update bug.
+async function lockOrder(tx: TxClient, orderId: string) {
+  await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`;
+}
+
 async function findOrderOrThrow(id: string) {
   const order = await prisma.order.findUnique({ where: { id }, include: orderInclude });
   if (!order) throw notFound('Order not found');
@@ -59,8 +74,13 @@ async function findOrderOrThrow(id: string) {
 // instead — e.g. VAT 8.1% on the bill, then a 10% compound tax is 10% of the
 // VAT amount itself, not of the bill. A compound tax with nothing before it
 // (e.g. toggled on alone) falls back to the discounted subtotal.
-async function recomputeTotals(orderId: string) {
-  const order = await prisma.order.findUniqueOrThrow({
+// Accepts an optional transaction client so callers that already have their
+// line-item/tax change open in a transaction can fold this into the same
+// round trip instead of opening a second one — each `await` against a remote
+// database (Neon, not localhost) pays real network latency, and this used to
+// run as its own separate transaction on every single order mutation.
+async function recomputeTotals(orderId: string, client: TxClient | typeof prisma = prisma) {
+  const order = await client.order.findUniqueOrThrow({
     where: { id: orderId },
     include: { items: true, taxes: { orderBy: { sortOrder: 'asc' } } },
   });
@@ -81,13 +101,21 @@ async function recomputeTotals(orderId: string) {
   }
   const total = round2(afterDiscount + taxTotal);
 
-  await prisma.$transaction([
-    ...taxUpdates.map((t) => prisma.orderTax.update({ where: { id: t.id }, data: { amount: t.amount } })),
-    prisma.order.update({
+  const writes = [
+    ...taxUpdates.map((t) => client.orderTax.update({ where: { id: t.id }, data: { amount: t.amount } })),
+    client.order.update({
       where: { id: orderId },
       data: { subtotal, discountAmount, taxAmount: taxTotal, total },
     }),
-  ]);
+  ];
+  // Already inside the caller's transaction — Prisma doesn't support nested
+  // transactions, so just run the writes on that same client/connection.
+  // Only wrap in our own transaction when called standalone (no client passed).
+  if (client === prisma) {
+    await prisma.$transaction(writes);
+  } else {
+    for (const write of writes) await write;
+  }
 }
 
 export async function listOpenOrders() {
@@ -112,23 +140,26 @@ export async function openOrderForTable(tableId: string) {
   const existing = await prisma.order.findFirst({ where: { tableId, status: 'OPEN' }, include: orderInclude });
   if (existing) return serializeOrder(existing);
 
-  const created = await prisma.order.create({ data: { tableId }, include: orderInclude });
-
   const defaultTaxes = await prisma.taxRate.findMany({ where: { active: true, defaultOn: true }, orderBy: { sortOrder: 'asc' } });
-  if (defaultTaxes.length > 0) {
-    await prisma.orderTax.createMany({
-      data: defaultTaxes.map((t) => ({
-        orderId: created.id,
-        taxRateId: t.id,
-        name: t.name,
-        percent: t.percent,
-        compound: t.compound,
-        sortOrder: t.sortOrder,
-      })),
-    });
-    await recomputeTotals(created.id);
-  }
-  return getOrder(created.id);
+
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.order.create({ data: { tableId } });
+    if (defaultTaxes.length > 0) {
+      await lockOrder(tx, created.id);
+      await tx.orderTax.createMany({
+        data: defaultTaxes.map((t) => ({
+          orderId: created.id,
+          taxRateId: t.id,
+          name: t.name,
+          percent: t.percent,
+          compound: t.compound,
+          sortOrder: t.sortOrder,
+        })),
+      });
+      await recomputeTotals(created.id, tx);
+    }
+    return serializeOrder(await tx.order.findUniqueOrThrow({ where: { id: created.id }, include: orderInclude }));
+  });
 }
 
 export async function addItem(orderId: string, menuItemId: string) {
@@ -142,18 +173,20 @@ export async function addItem(orderId: string, menuItemId: string) {
   // Atomic upsert (backed by the @@unique([orderId, menuItemId]) constraint) so
   // rapid repeat taps on the same item always increment one line instead of a
   // read-then-write race creating duplicate lines for the same menu item.
-  // Stock deduction for the item's recipe runs in the same transaction so an
-  // order line and its stock impact never drift apart.
-  await prisma.$transaction(async (tx) => {
+  // Stock deduction, total recompute, and the final read all share this one
+  // transaction/connection instead of three separate round trips to the DB —
+  // each `await` here pays real network latency against a remote database.
+  return prisma.$transaction(async (tx) => {
+    await lockOrder(tx, orderId);
     await tx.orderItem.upsert({
       where: { orderId_menuItemId: { orderId, menuItemId } },
       create: { orderId, menuItemId, nameSnapshot: menuItem.name, priceSnapshot: menuItem.price, qty: 1 },
       update: { qty: { increment: 1 } },
     });
     await applyStockForMenuItemSale(tx, menuItemId, 1);
+    await recomputeTotals(orderId, tx);
+    return serializeOrder(await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: orderInclude }));
   });
-  await recomputeTotals(orderId);
-  return getOrder(orderId);
 }
 
 export async function setLineQty(orderId: string, lineId: string, qty: number) {
@@ -163,7 +196,8 @@ export async function setLineQty(orderId: string, lineId: string, qty: number) {
   if (!line) throw notFound('Order line not found');
 
   const deltaQty = qty - line.qty;
-  await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
+    await lockOrder(tx, orderId);
     if (qty <= 0) {
       await tx.orderItem.delete({ where: { id: lineId } });
     } else {
@@ -171,9 +205,9 @@ export async function setLineQty(orderId: string, lineId: string, qty: number) {
     }
     // Positive delta = more sold (deduct); negative = less sold (restore).
     await applyStockForMenuItemSale(tx, line.menuItemId, qty <= 0 ? -line.qty : deltaQty);
+    await recomputeTotals(orderId, tx);
+    return serializeOrder(await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: orderInclude }));
   });
-  await recomputeTotals(orderId);
-  return getOrder(orderId);
 }
 
 export async function removeLine(orderId: string, lineId: string) {
@@ -181,20 +215,24 @@ export async function removeLine(orderId: string, lineId: string) {
   if (order.status !== 'OPEN') throw badRequest('Order is not open', 'ORDER_NOT_OPEN');
   const line = order.items.find((i) => i.id === lineId);
   if (!line) throw notFound('Order line not found');
-  await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
+    await lockOrder(tx, orderId);
     await tx.orderItem.delete({ where: { id: lineId } });
     await applyStockForMenuItemSale(tx, line.menuItemId, -line.qty);
+    await recomputeTotals(orderId, tx);
+    return serializeOrder(await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: orderInclude }));
   });
-  await recomputeTotals(orderId);
-  return getOrder(orderId);
 }
 
 export async function patchOrder(orderId: string, data: { discountPercent?: number }) {
   const order = await findOrderOrThrow(orderId);
   if (order.status !== 'OPEN') throw badRequest('Order is not open', 'ORDER_NOT_OPEN');
-  await prisma.order.update({ where: { id: orderId }, data });
-  await recomputeTotals(orderId);
-  return getOrder(orderId);
+  return prisma.$transaction(async (tx) => {
+    await lockOrder(tx, orderId);
+    await tx.order.update({ where: { id: orderId }, data });
+    await recomputeTotals(orderId, tx);
+    return serializeOrder(await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: orderInclude }));
+  });
 }
 
 export async function addTaxToOrder(orderId: string, taxRateId: string) {
@@ -203,29 +241,38 @@ export async function addTaxToOrder(orderId: string, taxRateId: string) {
   const taxRate = await prisma.taxRate.findUnique({ where: { id: taxRateId } });
   if (!taxRate) throw notFound('Tax rate not found');
 
-  const alreadyApplied = order.taxes.some((t) => t.taxRateId === taxRateId);
-  if (!alreadyApplied) {
-    await prisma.orderTax.create({
-      data: {
-        orderId,
-        taxRateId: taxRate.id,
-        name: taxRate.name,
-        percent: taxRate.percent,
-        compound: taxRate.compound,
-        sortOrder: taxRate.sortOrder,
-      },
-    });
-  }
-  await recomputeTotals(orderId);
-  return getOrder(orderId);
+  return prisma.$transaction(async (tx) => {
+    await lockOrder(tx, orderId);
+    // Re-checked after the lock (not just the pre-transaction `order` above) —
+    // a concurrent request could have applied this same tax while we were
+    // waiting for the lock, and the unique constraint would otherwise 500.
+    const alreadyApplied = await tx.orderTax.findUnique({ where: { orderId_taxRateId: { orderId, taxRateId } } });
+    if (!alreadyApplied) {
+      await tx.orderTax.create({
+        data: {
+          orderId,
+          taxRateId: taxRate.id,
+          name: taxRate.name,
+          percent: taxRate.percent,
+          compound: taxRate.compound,
+          sortOrder: taxRate.sortOrder,
+        },
+      });
+    }
+    await recomputeTotals(orderId, tx);
+    return serializeOrder(await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: orderInclude }));
+  });
 }
 
 export async function removeTaxFromOrder(orderId: string, taxRateId: string) {
   const order = await findOrderOrThrow(orderId);
   if (order.status !== 'OPEN') throw badRequest('Order is not open', 'ORDER_NOT_OPEN');
-  await prisma.orderTax.deleteMany({ where: { orderId, taxRateId } });
-  await recomputeTotals(orderId);
-  return getOrder(orderId);
+  return prisma.$transaction(async (tx) => {
+    await lockOrder(tx, orderId);
+    await tx.orderTax.deleteMany({ where: { orderId, taxRateId } });
+    await recomputeTotals(orderId, tx);
+    return serializeOrder(await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: orderInclude }));
+  });
 }
 
 export async function payOrder(orderId: string, method: 'CASH' | 'CARD', cashReceived?: number) {
@@ -239,17 +286,19 @@ export async function payOrder(orderId: string, method: 'CASH' | 'CARD', cashRec
   }
   const changeGiven = method === 'CASH' ? round2((cashReceived as number) - total) : null;
 
-  await prisma.order.update({
-    where: { id: orderId },
-    data: {
-      status: 'PAID',
-      paymentMethod: method,
-      cashReceived: method === 'CASH' ? cashReceived : null,
-      changeGiven,
-      closedAt: new Date(),
-    },
-  });
-  return getOrder(orderId);
+  return serializeOrder(
+    await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        status: 'PAID',
+        paymentMethod: method,
+        cashReceived: method === 'CASH' ? cashReceived : null,
+        changeGiven,
+        closedAt: new Date(),
+      },
+      include: orderInclude,
+    }),
+  );
 }
 
 // Open orders are soft-cancelled (kept for audit) after restoring any stock

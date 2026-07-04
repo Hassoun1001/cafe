@@ -3,6 +3,10 @@ services:
     name: studio-cafe
     env: node
     plan: free
+    # Matches Neon's us-east-1 (N. Virginia) region — Render defaults new
+    # services to Oregon, and every order mutation makes several sequential
+    # DB round trips, so a cross-country hop on each one compounds fast.
+    region: virginia
     buildCommand: npm install --include=dev && npm run build
     # migrate deploy + seed are both idempotent (skip anything already applied/present),
     # so it's safe to run them on every boot instead of needing a separate release step —
