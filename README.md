@@ -161,11 +161,17 @@ built frontend and the `/api/*` backend from one origin.
   Tables/POS screens rather than WebSockets — simpler for v1; swap in
   Socket.IO later if multiple simultaneous devices need instant push updates.
 - **Bilingual menu and warehouse names** — every `MenuItem` and `StockItem` has
-  an optional `nameAr` alongside its English name, editable from Settings →
-  Menu and the Warehouse stock list. Shown wherever the item appears (POS menu
-  grid, Warehouse list, Tracker, Employees item picker) with `dir="rtl"
-  lang="ar"`. The Employees "Item" field and the POS menu search box match
-  against either language.
+  an optional `nameAr` alongside its English name, both editable from Settings →
+  Menu (bulk "Save all changes") and the Warehouse stock list (inline, saves on
+  blur). Shown wherever the item appears (POS menu grid, Warehouse list,
+  Tracker, Employees item picker) with `dir="rtl" lang="ar"`. The Employees
+  "Item" field and the POS menu search box match against either language.
+- **Cash change tracking** — every CASH payment stores `cashReceived` and
+  `changeGiven` on the order (e.g. a 10,000 bill paid with 15,000 leaves 5,000
+  change). Reports surfaces a "Change given" total for the selected date range
+  (Payment split card) and a per-order "Change given" column in Sales history —
+  cash that left the register on overpayment is tracked separately from actual
+  revenue, both on-screen and in the Sales PDF export.
 - **Employees consumption item picker** is a searchable combobox
   (`frontend/src/components/SearchableSelect.tsx`) sourced from the live menu,
   not free text — selecting an item auto-fills the price field from the

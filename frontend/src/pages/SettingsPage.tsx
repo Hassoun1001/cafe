@@ -156,13 +156,15 @@ export function SettingsPage() {
     onError: (e) => toast.show(apiErrorMessage(e), 'error'),
   });
 
-  // --- prices + Arabic names ---
+  // --- names + prices + Arabic names ---
+  const [itemNameEdits, setItemNameEdits] = useState<Record<string, string>>({});
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [itemNameArEdits, setItemNameArEdits] = useState<Record<string, string>>({});
   const saveItems = useMutation({
-    mutationFn: (edits: { id: string; price?: number; nameAr?: string }[]) => api.bulkSaveItems(edits),
+    mutationFn: (edits: { id: string; name?: string; price?: number; nameAr?: string }[]) => api.bulkSaveItems(edits),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['menu'] });
+      setItemNameEdits({});
       setPrices({});
       setItemNameArEdits({});
       toast.show('Saved!', 'success');
@@ -171,9 +173,12 @@ export function SettingsPage() {
   });
 
   function handleSaveItems() {
-    const ids = new Set([...Object.keys(prices), ...Object.keys(itemNameArEdits)]);
+    const ids = new Set([...Object.keys(itemNameEdits), ...Object.keys(prices), ...Object.keys(itemNameArEdits)]);
     const edits = Array.from(ids).map((id) => ({
       id,
+      // A blank name would fail the "at least 1 char" server validation for
+      // the whole batch — treat clearing the field as "no change" instead.
+      ...(itemNameEdits[id]?.trim() && { name: itemNameEdits[id].trim() }),
       ...(prices[id] !== undefined && { price: parseFloat(prices[id]) || 0 }),
       ...(itemNameArEdits[id] !== undefined && { nameAr: itemNameArEdits[id] }),
     }));
@@ -427,7 +432,13 @@ export function SettingsPage() {
               {(menuQuery.data ?? []).flatMap((cat) =>
                 cat.items.map((item) => (
                   <tr key={item.id} className="border-b border-border last:border-b-0">
-                    <td className="py-2.5 pr-3 font-medium text-ink">{item.name}</td>
+                    <td className="py-2.5 pr-3">
+                      <Input
+                        className="w-36 py-1.5 font-medium"
+                        defaultValue={item.name}
+                        onChange={(e) => setItemNameEdits((p) => ({ ...p, [item.id]: e.target.value }))}
+                      />
+                    </td>
                     <td className="py-2.5 pr-3">
                       <Input
                         dir="rtl"

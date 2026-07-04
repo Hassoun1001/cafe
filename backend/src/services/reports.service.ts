@@ -42,6 +42,13 @@ export async function reportsSummary(range: { from?: string; to?: string; groupB
   const cashTotal = round2(orders.filter((o) => o.paymentMethod === 'CASH').reduce((s, o) => s + toNum(o.total), 0));
   const cardTotal = round2(orders.filter((o) => o.paymentMethod === 'CARD').reduce((s, o) => s + toNum(o.total), 0));
 
+  // Cash handed back to customers on overpayment (e.g. a 10,000 bill paid
+  // with 15,000 leaves 5,000 change) — tracked separately from revenue since
+  // it's cash that left the register but was never actually earned.
+  const changeGiven = round2(
+    orders.filter((o) => o.paymentMethod === 'CASH').reduce((s, o) => s + (o.changeGiven ? toNum(o.changeGiven) : 0), 0),
+  );
+
   const employeeConsumptions = await prisma.employeeConsumption.findMany({
     where: { createdAt: { gte: from, lt: to } },
   });
@@ -84,6 +91,7 @@ export async function reportsSummary(range: { from?: string; to?: string; groupB
     avgOrder,
     taxCollected,
     employeeCost,
+    changeGiven,
     paymentSplit: { cash: cashTotal, card: cardTotal },
     trend,
     topItems,

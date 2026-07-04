@@ -31,7 +31,14 @@ export const updateItemSchema = z.object({
 
 export const bulkItemEditSchema = z.object({
   edits: z
-    .array(z.object({ id: z.string().uuid(), price: z.number().min(0).optional(), nameAr: z.string().optional() }))
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string().min(1).optional(),
+        price: z.number().min(0).optional(),
+        nameAr: z.string().optional(),
+      }),
+    )
     .min(1),
 });
 

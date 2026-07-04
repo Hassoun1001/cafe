@@ -287,6 +287,10 @@ export function ReportsPage() {
               <div className="text-xs font-medium text-info">Card</div>
               <div className="mt-1 text-lg font-bold text-info">{money(summary?.paymentSplit.card ?? 0, currency)}</div>
             </div>
+            <div className="flex-1 rounded-xl bg-warning-light p-4 text-center">
+              <div className="text-xs font-medium text-warning">Change given</div>
+              <div className="mt-1 text-lg font-bold text-warning">{money(summary?.changeGiven ?? 0, currency)}</div>
+            </div>
           </div>
           {(summary?.lowStock ?? []).length === 0 ? (
             <div className="flex items-center gap-2 rounded-xl bg-success-light px-4 py-3 text-sm font-medium text-success">
@@ -318,13 +322,14 @@ export function ReportsPage() {
                 <th className="py-2.5 pr-3">Payment</th>
                 <th className="py-2.5 pr-3">Tax</th>
                 <th className="py-2.5 pr-3">Total</th>
+                <th className="py-2.5 pr-3">Change given</th>
                 <th className="py-2.5"></th>
               </tr>
             </thead>
             <tbody>
               {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-sm text-muted">
+                  <td colSpan={9} className="py-8 text-center text-sm text-muted">
                     No sales yet
                   </td>
                 </tr>
@@ -342,6 +347,7 @@ export function ReportsPage() {
                     </td>
                     <td className="py-2.5 pr-3 text-muted">{o.taxAmount ? money(o.taxAmount, currency) : '—'}</td>
                     <td className="py-2.5 pr-3 font-semibold text-ink">{money(o.total, currency)}</td>
+                    <td className="py-2.5 pr-3 text-warning">{o.changeGiven ? money(o.changeGiven, currency) : '—'}</td>
                     <td className="py-2.5">
                       <div className="flex gap-1.5">
                         <Button size="sm" variant="secondary" onClick={() => openReceiptPdf(o.id)}>

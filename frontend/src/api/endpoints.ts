@@ -36,7 +36,7 @@ export const updateMenuItem = (
   data: Partial<{ name: string; nameAr: string; sub: string; price: number; categoryId: string; active: boolean }>,
 ) => api.put(`/menu/items/${id}`, data).then((r) => r.data);
 export const deleteMenuItem = (id: string) => api.delete(`/menu/items/${id}`);
-export const bulkSaveItems = (edits: { id: string; price?: number; nameAr?: string }[]) =>
+export const bulkSaveItems = (edits: { id: string; name?: string; price?: number; nameAr?: string }[]) =>
   api.patch('/menu/items/prices', { edits }).then((r) => r.data);
 export const getRecipe = (menuItemId: string) => api.get<RecipeIngredientDto[]>(`/menu/items/${menuItemId}/recipe`).then((r) => r.data);
 export const setRecipeIngredient = (menuItemId: string, stockItemId: string, qtyPerUnit: number) =>

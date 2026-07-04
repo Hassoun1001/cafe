@@ -47,7 +47,8 @@ export function WarehousePage() {
   });
 
   const updateItem = useMutation({
-    mutationFn: (vars: { id: string; nameAr: string }) => api.updateStockItem(vars.id, { nameAr: vars.nameAr }),
+    mutationFn: (vars: { id: string; name?: string; nameAr?: string }) =>
+      api.updateStockItem(vars.id, { ...(vars.name !== undefined && { name: vars.name }), ...(vars.nameAr !== undefined && { nameAr: vars.nameAr }) }),
     onSuccess: () => invalidate(),
     onError: (e) => toast.show(apiErrorMessage(e), 'error'),
   });
@@ -179,7 +180,16 @@ export function WarehousePage() {
                 const isLow = s.qty <= s.minQty;
                 return (
                   <tr key={s.id} className="border-b border-border last:border-b-0 hover:bg-bg/60">
-                    <td className="py-2.5 pr-3 font-medium text-ink">{s.name}</td>
+                    <td className="py-2.5 pr-3">
+                      <Input
+                        className="w-36 py-1.5 font-medium"
+                        defaultValue={s.name}
+                        key={`${s.id}-${s.name}`}
+                        onBlur={(e) => {
+                          if (e.target.value.trim() && e.target.value !== s.name) updateItem.mutate({ id: s.id, name: e.target.value.trim() });
+                        }}
+                      />
+                    </td>
                     <td className="py-2.5 pr-3">
                       <Input
                         dir="rtl"

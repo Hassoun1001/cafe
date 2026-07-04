@@ -138,6 +138,7 @@ export interface ReportsSummaryDto {
   avgOrder: number;
   taxCollected: number;
   employeeCost: number;
+  changeGiven: number;
   paymentSplit: { cash: number; card: number };
   trend: { date: string; total: number }[];
   topItems: { name: string; qty: number; revenue: number }[];

@@ -91,14 +91,18 @@ export async function deleteItem(id: string) {
   await prisma.menuItem.delete({ where: { id } });
 }
 
-// Bulk save from the Settings price editor — each row can update price and/or
-// the Arabic name in one batch.
-export async function bulkSaveItems(edits: { id: string; price?: number; nameAr?: string }[]) {
+// Bulk save from the Settings price editor — each row can update name, price,
+// and/or the Arabic name in one batch.
+export async function bulkSaveItems(edits: { id: string; name?: string; price?: number; nameAr?: string }[]) {
   await prisma.$transaction(
     edits.map((e) =>
       prisma.menuItem.update({
         where: { id: e.id },
-        data: { ...(e.price !== undefined && { price: e.price }), ...(e.nameAr !== undefined && { nameAr: e.nameAr }) },
+        data: {
+          ...(e.name !== undefined && { name: e.name }),
+          ...(e.price !== undefined && { price: e.price }),
+          ...(e.nameAr !== undefined && { nameAr: e.nameAr }),
+        },
       }),
     ),
   );

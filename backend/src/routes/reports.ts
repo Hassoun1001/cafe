@@ -40,17 +40,19 @@ reportsRouter.get(
       { label: 'Tax collected', value: money(summary.taxCollected, settings.currency) },
       { label: 'Cash', value: money(summary.paymentSplit.cash, settings.currency) },
       { label: 'Card', value: money(summary.paymentSplit.card, settings.currency) },
+      { label: 'Change given', value: money(summary.changeGiven, settings.currency) },
     ]);
     drawTable(
       doc,
       [
-        { header: 'Order#', width: 45 },
-        { header: 'Table', width: 40 },
-        { header: 'Date', width: 85 },
-        { header: 'Items', width: 190 },
-        { header: 'Payment', width: 50 },
-        { header: 'Tax', width: 55, align: 'right' },
-        { header: 'Total', width: 65, align: 'right' },
+        { header: 'Order#', width: 40 },
+        { header: 'Table', width: 35 },
+        { header: 'Date', width: 80 },
+        { header: 'Items', width: 140 },
+        { header: 'Payment', width: 45 },
+        { header: 'Tax', width: 50, align: 'right' },
+        { header: 'Total', width: 60, align: 'right' },
+        { header: 'Change', width: 60, align: 'right' },
       ],
       history.orders.map((o) => [
         `#${o.orderNumber}`,
@@ -60,6 +62,7 @@ reportsRouter.get(
         o.paymentMethod ?? '',
         money(o.taxAmount, settings.currency),
         money(o.total, settings.currency),
+        o.changeGiven ? money(o.changeGiven, settings.currency) : '-',
       ]),
     );
     streamPdf(res, doc, 'sales-report.pdf');
