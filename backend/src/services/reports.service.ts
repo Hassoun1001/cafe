@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { toNum, round2 } from '../lib/decimal';
+import { endOfDayExclusive } from '../lib/dates';
 
 export type ReportGroupBy = 'day' | 'week' | 'month';
 
@@ -18,13 +19,17 @@ function bucketKey(d: Date, groupBy: ReportGroupBy): string {
 }
 
 export async function reportsSummary(range: { from?: string; to?: string; groupBy?: ReportGroupBy }) {
-  const to = range.to ? new Date(range.to) : new Date();
+  // `to` is a date-only string (e.g. "2026-07-04" for "Today") — parsed
+  // directly it's midnight UTC, so a `lte` comparison against it would
+  // exclude nearly the entire day. Use the start of the *next* day with `lt`
+  // instead, so the given day is fully included.
+  const to = range.to ? endOfDayExclusive(range.to) : new Date();
   const from = range.from ? new Date(range.from) : new Date(to.getTime() - 13 * 24 * 60 * 60 * 1000);
   const groupBy = range.groupBy ?? 'day';
 
   const where: Prisma.OrderWhereInput = {
     status: 'PAID',
-    closedAt: { gte: from, lte: to },
+    closedAt: { gte: from, lt: to },
   };
 
   const orders = await prisma.order.findMany({ where, include: { items: true } });
@@ -38,7 +43,7 @@ export async function reportsSummary(range: { from?: string; to?: string; groupB
   const cardTotal = round2(orders.filter((o) => o.paymentMethod === 'CARD').reduce((s, o) => s + toNum(o.total), 0));
 
   const employeeConsumptions = await prisma.employeeConsumption.findMany({
-    where: { createdAt: { gte: from, lte: to } },
+    where: { createdAt: { gte: from, lt: to } },
   });
   const employeeCost = round2(employeeConsumptions.reduce((s, e) => s + toNum(e.price), 0));
 

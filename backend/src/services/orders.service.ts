@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { toNum, round2 } from '../lib/decimal';
 import { badRequest, notFound } from '../lib/errors';
+import { endOfDayExclusive } from '../lib/dates';
 import { applyStockForMenuItemSale } from './stock.service';
 
 type TxClient = Prisma.TransactionClient;
@@ -331,7 +332,10 @@ export async function listSalesHistory(filters: {
   if (filters.from || filters.to) {
     where.closedAt = {};
     if (filters.from) where.closedAt.gte = new Date(filters.from);
-    if (filters.to) where.closedAt.lte = new Date(filters.to);
+    // `to` is a date-only string (e.g. "2026-07-04") — parsed directly it's
+    // midnight UTC, so `lte` against it would exclude nearly the whole day.
+    // Use the start of the next day with `lt` so the given day is fully included.
+    if (filters.to) where.closedAt.lt = endOfDayExclusive(filters.to);
   }
   if (filters.payment) where.paymentMethod = filters.payment;
   if (filters.table) where.table = { number: filters.table };

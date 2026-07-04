@@ -9,6 +9,7 @@ import * as employeesService from '../services/employees.service';
 import { getSettings } from '../services/settings.service';
 import { createReportDoc, drawStats, drawTable } from '../lib/reportPdf';
 import { formatDateTime, money, streamPdf } from '../lib/reportFormat';
+import { endOfDayExclusive } from '../lib/dates';
 
 export const reportsRouter = Router();
 reportsRouter.use(authenticate);
@@ -109,7 +110,10 @@ reportsRouter.get(
     const logs = consumption.logs.filter((l) => {
       const d = new Date(l.date);
       if (from && d < new Date(from)) return false;
-      if (to && d > new Date(to)) return false;
+      // `to` is a date-only string (e.g. "2026-07-04") — parsed directly
+      // it's midnight UTC, so comparing against it directly would exclude
+      // nearly the whole day. Compare against the start of the next day instead.
+      if (to && d >= endOfDayExclusive(to)) return false;
       return true;
     });
 
