@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ChefHat, Info, KeyRound, Lock, Plus, Save, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ChefHat, ChevronDown, Info, KeyRound, Lock, Plus, Save, Trash2, X } from 'lucide-react';
 import * as api from '../api/endpoints';
 import { useToast } from '../lib/toast';
 import { apiErrorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { money } from '../lib/format';
 import { Badge, Button, Card, ConfirmModal, Input, Label, Modal, PageHeader } from '../components/ui';
 import { RecipeEditorModal } from '../components/RecipeEditorModal';
 import type { MenuItemDto } from '../types';
@@ -84,12 +85,21 @@ export function SettingsPage() {
   // --- menu categories ---
   const [newCatName, setNewCatName] = useState('');
   const [deleteCatId, setDeleteCatId] = useState<string | null>(null);
+  const [expandedCatId, setExpandedCatId] = useState<string | null>(null);
   const createMenuCategory = useMutation({
     mutationFn: (name: string) => api.createCategory(name),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['menu'] });
       setNewCatName('');
       toast.show('Category added', 'success');
+    },
+    onError: (e) => toast.show(apiErrorMessage(e), 'error'),
+  });
+  const renameMenuCategory = useMutation({
+    mutationFn: (vars: { id: string; name: string }) => api.updateCategory(vars.id, vars.name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['menu'] });
+      toast.show('Category renamed', 'success');
     },
     onError: (e) => toast.show(apiErrorMessage(e), 'error'),
   });
@@ -104,6 +114,16 @@ export function SettingsPage() {
       setDeleteCatId(null);
       toast.show(apiErrorMessage(e), 'error');
     },
+  });
+
+  // --- menu item delete ---
+  const removeMenuItem = useMutation({
+    mutationFn: (id: string) => api.deleteMenuItem(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['menu'] });
+      toast.show('Item deleted');
+    },
+    onError: (e) => toast.show(apiErrorMessage(e), 'error'),
   });
 
   // --- stock categories ---
@@ -398,16 +418,59 @@ export function SettingsPage() {
           </Button>
         </div>
         <div>
-          {(menuQuery.data ?? []).map((cat) => (
-            <div key={cat.id} className="flex items-center justify-between border-b border-border py-2.5 last:border-b-0">
-              <span className="text-sm font-medium text-ink">
-                {cat.name} <span className="text-muted">({cat.items.length} item{cat.items.length === 1 ? '' : 's'})</span>
-              </span>
-              <Button size="sm" variant="danger" onClick={() => setDeleteCatId(cat.id)}>
-                Remove
-              </Button>
-            </div>
-          ))}
+          {(menuQuery.data ?? []).map((cat) => {
+            const isExpanded = expandedCatId === cat.id;
+            return (
+              <div key={cat.id} className="border-b border-border last:border-b-0">
+                <div className="flex items-center gap-2 py-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedCatId(isExpanded ? null : cat.id)}
+                    className="shrink-0 rounded-md p-1 text-muted hover:bg-bg"
+                    aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                  >
+                    <ChevronDown className={'size-4 transition-transform ' + (isExpanded ? '' : '-rotate-90')} />
+                  </button>
+                  <Input
+                    className="w-48 py-1.5 font-medium"
+                    defaultValue={cat.name}
+                    key={`${cat.id}-${cat.name}`}
+                    onBlur={(e) => {
+                      const value = e.target.value.trim();
+                      if (value && value !== cat.name) renameMenuCategory.mutate({ id: cat.id, name: value });
+                    }}
+                  />
+                  <span className="flex-1 text-sm text-muted">
+                    {cat.items.length} item{cat.items.length === 1 ? '' : 's'}
+                  </span>
+                  <Button size="sm" variant="danger" onClick={() => setDeleteCatId(cat.id)}>
+                    Remove
+                  </Button>
+                </div>
+                {isExpanded && (
+                  <div className="mb-3 ml-8 space-y-1 pb-1">
+                    {cat.items.length === 0 ? (
+                      <div className="text-xs text-muted">No items in this category yet</div>
+                    ) : (
+                      cat.items.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between rounded-lg bg-bg px-3 py-1.5 text-xs">
+                          <span className="font-medium text-ink">
+                            {item.name}
+                            {item.nameAr && (
+                              <span dir="rtl" lang="ar" className="ml-2 text-muted">
+                                {item.nameAr}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-muted">{item.price > 0 ? money(item.price, settings?.currency) : 'price TBD'}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {(menuQuery.data ?? []).length === 0 && <div className="py-2 text-sm text-muted">No categories yet</div>}
         </div>
       </Card>
@@ -425,7 +488,8 @@ export function SettingsPage() {
                 <th className="py-2.5 pr-3">Item (Arabic)</th>
                 <th className="py-2.5 pr-3">Category</th>
                 <th className="py-2.5 pr-3">Price</th>
-                <th className="py-2.5">Recipe</th>
+                <th className="py-2.5 pr-3">Recipe</th>
+                <th className="py-2.5"></th>
               </tr>
             </thead>
             <tbody>
@@ -460,10 +524,15 @@ export function SettingsPage() {
                         onChange={(e) => setPrices((p) => ({ ...p, [item.id]: e.target.value }))}
                       />
                     </td>
-                    <td className="py-2.5">
+                    <td className="py-2.5 pr-3">
                       <Button size="sm" variant="secondary" onClick={() => setRecipeItem(item)}>
                         <ChefHat className="size-3.5" />
                         Recipe
+                      </Button>
+                    </td>
+                    <td className="py-2.5">
+                      <Button size="sm" variant="danger" onClick={() => removeMenuItem.mutate(item.id)}>
+                        <X className="size-3.5" />
                       </Button>
                     </td>
                   </tr>
