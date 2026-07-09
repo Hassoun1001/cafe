@@ -48,10 +48,21 @@ export async function updateTable(id: string, data: { label?: string; active?: b
 export async function deleteTable(id: string) {
   const existing = await prisma.cafeTable.findFirst({
     where: { id },
-    include: { orders: { where: { status: 'OPEN' } }, studyBookings: { where: { status: 'ACTIVE' } } },
+    include: {
+      orders: { where: { status: 'OPEN' } },
+      studyBookings: { where: { status: 'ACTIVE' } },
+      _count: { select: { orders: true } },
+    },
   });
   if (!existing) throw notFound('Table not found');
   if (existing.orders.length > 0) throw badRequest('Cannot delete a table with an open order', 'TABLE_HAS_OPEN_ORDER');
   if (existing.studyBookings.length > 0) throw badRequest('Cannot delete a resource with an active booking', 'RESOURCE_HAS_ACTIVE_BOOKING');
+  // A table with any order history (even fully paid, closed sales) can't be
+  // hard-deleted — Order.tableId has no cascade, so the DB would otherwise
+  // reject this with a raw foreign-key error. Renaming/deactivating instead
+  // preserves the sales record; only a genuinely never-used table can go.
+  if (existing._count.orders > 0) {
+    throw badRequest('Cannot delete a table with sales history — it has past orders on record. Rename it instead if it\'s no longer needed.', 'TABLE_HAS_ORDER_HISTORY');
+  }
   await prisma.cafeTable.delete({ where: { id } });
 }
