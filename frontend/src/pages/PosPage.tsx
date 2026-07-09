@@ -21,7 +21,7 @@ export function PosPage() {
   const [cashModalOpen, setCashModalOpen] = useState(false);
   const [cashReceived, setCashReceived] = useState('');
 
-  const tablesQuery = useQuery({ queryKey: ['tables'], queryFn: api.getTables, refetchInterval: 8000 });
+  const tablesQuery = useQuery({ queryKey: ['tables'], queryFn: () => api.getTables(), refetchInterval: 8000 });
   const menuQuery = useQuery({ queryKey: ['menu'], queryFn: api.getMenu });
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const presetsQuery = useQuery({ queryKey: ['discount-presets'], queryFn: api.getDiscountPresets });
@@ -233,7 +233,7 @@ export function PosPage() {
         <div className="flex flex-col xl:sticky xl:top-8 xl:max-h-[calc(100vh-2rem)]">
           {order && (
             <div className="mb-4 flex shrink-0 items-center justify-between rounded-2xl bg-ink px-4 py-3.5 text-white">
-              <span className="text-sm font-semibold">Table {order.table.number}</span>
+              <span className="text-sm font-semibold">{order.table.label ?? `Table ${order.table.number}`}</span>
               <button
                 onClick={() => {
                   setSelectedOrderId(null);

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ChefHat, ChevronDown, Info, KeyRound, Lock, Plus, Save, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ChefHat, ChevronDown, Info, KeyRound, Lock, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import * as api from '../api/endpoints';
 import { useToast } from '../lib/toast';
 import { apiErrorMessage } from '../lib/api';
@@ -8,7 +8,7 @@ import { useAuth } from '../lib/auth';
 import { money } from '../lib/format';
 import { Badge, Button, Card, ConfirmModal, Input, Label, Modal, PageHeader } from '../components/ui';
 import { RecipeEditorModal } from '../components/RecipeEditorModal';
-import type { MenuItemDto } from '../types';
+import type { ImportResultDto, MenuItemDto } from '../types';
 
 export function SettingsPage() {
   const qc = useQueryClient();
@@ -22,8 +22,64 @@ export function SettingsPage() {
   const taxRatesQuery = useQuery({ queryKey: ['tax-rates'], queryFn: api.getTaxRates });
   const stockCategoriesQuery = useQuery({ queryKey: ['settings', 'stock-categories'], queryFn: api.getStockCategories });
   const stockUnitsQuery = useQuery({ queryKey: ['settings', 'stock-units'], queryFn: api.getStockUnits });
+  const usersQuery = useQuery({ queryKey: ['users'], queryFn: api.getUsers });
 
   const settings = settingsQuery.data;
+
+  // --- legacy sales import ---
+  const [importResult, setImportResult] = useState<ImportResultDto | null>(null);
+  const importSalesMutation = useMutation({
+    mutationFn: (file: File) => api.importSalesLedger(file),
+    onSuccess: (result) => {
+      setImportResult(result);
+      qc.invalidateQueries();
+      toast.show(`Imported ${result.imported} sale${result.imported === 1 ? '' : 's'}`, 'success');
+    },
+    onError: (e) => toast.show(apiErrorMessage(e), 'error'),
+  });
+
+  // --- team access (cafe user accounts) ---
+  const [newUsername, setNewUsername] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState('');
+  const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
+  const createUserMutation = useMutation({
+    mutationFn: () => api.createUser(newUsername.trim(), newUserPassword),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      setNewUsername('');
+      setNewUserPassword('');
+      toast.show('User added', 'success');
+    },
+    onError: (e) => toast.show(apiErrorMessage(e), 'error'),
+  });
+  const toggleUserActive = useMutation({
+    mutationFn: (vars: { id: string; active: boolean }) => api.updateUser(vars.id, { active: vars.active }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+    onError: (e) => toast.show(apiErrorMessage(e), 'error'),
+  });
+  const resetUserPasswordMutation = useMutation({
+    mutationFn: () => api.resetUserPassword(resetPasswordUserId as string, resetPasswordValue),
+    onSuccess: () => {
+      setResetPasswordUserId(null);
+      setResetPasswordValue('');
+      toast.show('Password reset', 'success');
+    },
+    onError: (e) => toast.show(apiErrorMessage(e), 'error'),
+  });
+  const removeUser = useMutation({
+    mutationFn: (id: string) => api.deleteUser(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      setDeleteUserId(null);
+      toast.show('User removed');
+    },
+    onError: (e) => {
+      setDeleteUserId(null);
+      toast.show(apiErrorMessage(e), 'error');
+    },
+  });
 
   // --- tax rates ---
   const [taxName, setTaxName] = useState('');
@@ -55,7 +111,7 @@ export function SettingsPage() {
   const [recipeItem, setRecipeItem] = useState<MenuItemDto | null>(null);
 
   // --- tables ---
-  const tablesQuery = useQuery({ queryKey: ['tables'], queryFn: api.getTables });
+  const tablesQuery = useQuery({ queryKey: ['tables'], queryFn: () => api.getTables() });
   const [newTableNumber, setNewTableNumber] = useState('');
   const [newTableLabel, setNewTableLabel] = useState('');
   const [deleteTableId, setDeleteTableId] = useState<string | null>(null);
@@ -732,6 +788,54 @@ export function SettingsPage() {
         </div>
       </Card>
 
+      <Card title="Team access">
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="min-w-[160px]">
+            <Label>Username</Label>
+            <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="e.g. sara" />
+          </div>
+          <div className="min-w-[160px]">
+            <Label>Password</Label>
+            <Input type="password" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} placeholder="min 6 characters" />
+          </div>
+          <Button
+            variant="primary"
+            onClick={() => {
+              if (!newUsername.trim() || newUserPassword.length < 6) {
+                toast.show('Enter a username and a password (min 6 characters)');
+                return;
+              }
+              createUserMutation.mutate();
+            }}
+          >
+            <Plus className="size-4" />
+            Add user
+          </Button>
+        </div>
+        <div>
+          {(usersQuery.data ?? []).map((u) => (
+            <div key={u.id} className="flex items-center justify-between border-b border-border py-2.5 last:border-b-0">
+              <span className="flex items-center gap-2 text-sm font-medium text-ink">
+                {u.username}
+                <Badge tone={u.active ? 'green' : 'gray'}>{u.active ? 'Active' : 'Disabled'}</Badge>
+              </span>
+              <div className="flex gap-1.5">
+                <Button size="sm" variant="secondary" onClick={() => toggleUserActive.mutate({ id: u.id, active: !u.active })}>
+                  {u.active ? 'Disable' : 'Enable'}
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setResetPasswordUserId(u.id)}>
+                  <KeyRound className="size-3.5" />
+                </Button>
+                <Button size="sm" variant="danger" onClick={() => setDeleteUserId(u.id)}>
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+          ))}
+          {(usersQuery.data ?? []).length === 0 && <div className="py-2 text-sm text-muted">No users yet</div>}
+        </div>
+      </Card>
+
       <Card title="Security">
         <div className="flex items-center justify-between border-b border-border py-3.5 first:pt-0">
           <div className="text-sm font-medium text-ink">Change password</div>
@@ -747,6 +851,44 @@ export function SettingsPage() {
             Lock
           </Button>
         </div>
+      </Card>
+
+      <Card title="Import legacy sales">
+        <div className="mb-3 flex items-center gap-2 rounded-xl bg-info-light px-4 py-3 text-[13px] font-medium text-info">
+          <Info className="size-4 shrink-0" />
+          Upload a daily cash-register statement (.xls/.xlsx) from the old system. Each invoice row becomes a PAID
+          order dated from the sheet, matched to the table number, and marked CASH. Re-uploading the same file is
+          safe — already-imported invoices are skipped automatically.
+        </div>
+        <label className="flex w-fit cursor-pointer items-center gap-2 rounded-lg bg-ink px-4 py-2.5 text-sm font-medium text-white hover:bg-ink/90">
+          <Upload className="size-4" />
+          {importSalesMutation.isPending ? 'Uploading…' : 'Choose file to import'}
+          <input
+            type="file"
+            accept=".xls,.xlsx"
+            className="hidden"
+            disabled={importSalesMutation.isPending}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importSalesMutation.mutate(file);
+              e.target.value = '';
+            }}
+          />
+        </label>
+        {importResult && (
+          <div className="mt-4 rounded-xl border border-border bg-bg p-4 text-sm">
+            <div className="font-medium text-ink">
+              Imported {importResult.imported}, already had {importResult.alreadyImported}, skipped {importResult.skipped}
+            </div>
+            {importResult.skippedDetails.length > 0 && (
+              <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-muted">
+                {importResult.skippedDetails.map((d, i) => (
+                  <li key={i}>{d}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </Card>
 
       <Card title="Danger zone">
@@ -794,6 +936,41 @@ export function SettingsPage() {
         confirmLabel="Remove category"
         danger
       />
+
+      <ConfirmModal
+        open={!!deleteUserId}
+        onClose={() => setDeleteUserId(null)}
+        onConfirm={() => deleteUserId && removeUser.mutate(deleteUserId)}
+        title="Remove user?"
+        message="This account will no longer be able to log in."
+        confirmLabel="Remove user"
+        danger
+      />
+
+      <Modal open={!!resetPasswordUserId} onClose={() => setResetPasswordUserId(null)} title="Reset password">
+        <div className="mb-5">
+          <Label>New password (min 6 characters)</Label>
+          <Input type="password" value={resetPasswordValue} onChange={(e) => setResetPasswordValue(e.target.value)} />
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="primary"
+            className="flex-1"
+            onClick={() => {
+              if (resetPasswordValue.length < 6) {
+                toast.show('Password must be at least 6 characters');
+                return;
+              }
+              resetUserPasswordMutation.mutate();
+            }}
+          >
+            Save
+          </Button>
+          <Button variant="secondary" onClick={() => setResetPasswordUserId(null)}>
+            Cancel
+          </Button>
+        </div>
+      </Modal>
 
       <Modal open={pwModalOpen} onClose={() => setPwModalOpen(false)} title="Change password">
         <div className="mb-3">

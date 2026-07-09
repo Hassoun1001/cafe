@@ -2,13 +2,17 @@
 
 A real, database-backed cafe POS system: cashier/tables, warehouse stock, a weekly
 stock-count tracker, employee consumption logging, reports, and settings — replacing
-the original single-file HTML prototype (`StudioCafe_System_v4.html`).
+the original single-file HTML prototype (`StudioCafe_System_v4.html`). Also includes
+a second, fully independent app for booking the venue's study tables/rooms by the
+hour (see "Study booking system" below).
 
 ## Stack
 
 - **Backend**: Node.js + Express + TypeScript + Prisma + PostgreSQL (`backend/`)
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS (`frontend/`)
-- Single shared login (matches the original design), JWT session token
+- Per-user username+password accounts, JWT session token — two entirely separate
+  auth realms (Cafe at `/`, Study at `/study`); a Study account cannot log into the
+  Cafe app and vice versa
 - PDF receipts generated server-side (`pdfkit`); Excel exports client-side (`xlsx`)
 
 ## Project layout
@@ -38,19 +42,22 @@ Prerequisites: Node.js 20+, a running PostgreSQL instance.
    ```
    npm install
    ```
-4. Run migrations and seed the initial menu/stock/employees/tables:
+4. Run migrations and seed the initial menu/stock/employees/tables/study resources:
    ```
    npm run db:migrate
    npm run db:seed
    ```
-   The seed script creates the default password **`01090703`** (change it from
-   Settings → Security after first login).
+   The seed script creates one `admin` account per system (Cafe and Study) with the
+   bootstrap password **`StudioCafe#2026Setup`** if no accounts exist yet — change it
+   immediately from Settings → Security after first login on each system, and add
+   named accounts for staff from Settings → Team access.
 5. Run both dev servers (in two terminals):
    ```
    npm run dev:backend    # http://localhost:4000
    npm run dev:frontend   # http://localhost:5173 (proxies /api to :4000)
    ```
-   Open http://localhost:5173.
+   Open http://localhost:5173 for the Cafe app, http://localhost:5173/study for the
+   Study booking app.
 
 ## Production build
 
@@ -102,9 +109,11 @@ git push -u origin main
    this applies all migrations and seeds the initial menu/stock/employees/tables
    automatically on first boot (both steps are safe to re-run on every restart,
    they skip anything already applied/present).
-4. Once the deploy finishes, open the Render-assigned URL. Log in with the
-   seeded default password **`01090703`** and change it immediately from
-   Settings → Security.
+4. Once the deploy finishes, open the Render-assigned URL. Log in to the Cafe
+   app (`/`) and the Study app (`/study`) separately with username **`admin`** /
+   password **`StudioCafe#2026Setup`**, and change the password immediately from
+   Settings → Security on each — then add named accounts per staff member from
+   Settings → Team access.
 
 No CORS configuration is needed — the same Render service serves both the
 built frontend and the `/api/*` backend from one origin.
@@ -155,8 +164,26 @@ built frontend and the `/api/*` backend from one origin.
   reusable multi-page table renderer with automatic page breaks). Exports
   always cover the full matching result set for the selected date range, not
   just whatever page is currently visible on screen.
-- **Single shared login** — there are no per-user accounts/roles; anyone with
-  the password has full access, matching the original prototype's design.
+- **Per-user accounts, two independent systems** — Cafe and Study each have their
+  own `User` accounts (username + bcrypt password hash), managed from each app's
+  own Settings → Team access. Deleting the last active account for a system is
+  blocked so you can never lock yourself out (`backend/src/services/users.service.ts`).
+  A Study account has no access to the Cafe app's data or vice versa; they share
+  only the underlying database.
+- **Study booking system** (`/study`) — 9 tables + 2 rooms, booked hourly. A base
+  booking is 1 hour; adding a drink from the booking card extends it to 1.5 hours
+  and opens a real Cafe order for that drink (reusing the exact same order/payment
+  pipeline as the Cashier screen — `CafeTable.kind` distinguishes dining tables from
+  study resources, see `backend/src/services/study.service.ts`). Checkout settles
+  both the room fee and any linked drink order together; Cancel and Delete are also
+  available (Cancel keeps the record for History, Delete removes it entirely).
+  Configurable hourly rate/currency at Settings → Pricing.
+- **Legacy sales import** (Cafe Settings → Import legacy sales, always available) —
+  upload a `.xls`/`.xlsx` daily cash-register export from a prior system and each
+  transaction row becomes a real, dated, PAID `Order` (one placeholder line item,
+  marked CASH), matched to the table number from the sheet. Safe to re-run on the
+  same file any time — already-imported rows are skipped via a unique `importRef`
+  (`backend/src/services/import.service.ts`, `backend/src/lib/ledgerImport.ts`).
 - Real-time multi-device sync is done via short polling (~8s) on the
   Tables/POS screens rather than WebSockets — simpler for v1; swap in
   Socket.IO later if multiple simultaneous devices need instant push updates.

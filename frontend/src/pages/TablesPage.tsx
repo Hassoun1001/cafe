@@ -6,17 +6,19 @@ import * as api from '../api/endpoints';
 import { money } from '../lib/format';
 import { useToast } from '../lib/toast';
 import { apiErrorMessage } from '../lib/api';
-import { Button, Card, ConfirmModal, EmptyState, PageHeader, StatCard, StatGrid } from '../components/ui';
+import { Button, Card, ConfirmModal, EmptyState, PageHeader, Pill, StatCard, StatGrid } from '../components/ui';
 import type { CafeTableDto } from '../types';
 
 export function TablesPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const toast = useToast();
+  const [tab, setTab] = useState<'dining' | 'study'>('dining');
   const [detailTable, setDetailTable] = useState<CafeTableDto | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
 
-  const tablesQuery = useQuery({ queryKey: ['tables'], queryFn: api.getTables, refetchInterval: 8000 });
+  const tablesQuery = useQuery({ queryKey: ['tables'], queryFn: () => api.getTables(), refetchInterval: 8000 });
+  const studyTablesQuery = useQuery({ queryKey: ['tables', 'study'], queryFn: () => api.getTables('study'), refetchInterval: 8000 });
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const currency = settingsQuery.data?.currency ?? 'SYP';
 
@@ -31,21 +33,36 @@ export function TablesPage() {
     onError: (e) => toast.show(apiErrorMessage(e), 'error'),
   });
 
-  const tables = tablesQuery.data ?? [];
+  const tables = tab === 'dining' ? (tablesQuery.data ?? []) : (studyTablesQuery.data ?? []);
   const occupied = tables.filter((t) => t.openOrder).length;
   const pendingRevenue = tables.reduce((s, t) => s + (t.openOrder?.total ?? 0), 0);
+
+  function selectTab(next: 'dining' | 'study') {
+    setTab(next);
+    setDetailTable(null);
+  }
 
   return (
     <div>
       <PageHeader title="Tables" description="Live status of every table in the cafe." />
+
+      <div className="mb-5 flex gap-1.5">
+        <Pill active={tab === 'dining'} onClick={() => selectTab('dining')}>
+          Dining
+        </Pill>
+        <Pill active={tab === 'study'} onClick={() => selectTab('study')}>
+          Study tables & rooms
+        </Pill>
+      </div>
+
       <StatGrid>
-        <StatCard label="Total tables" value={tables.length} />
-        <StatCard label="Active tables" value={occupied} tone="var(--color-warning)" />
-        <StatCard label="Empty tables" value={tables.length - occupied} tone="var(--color-success)" />
+        <StatCard label={tab === 'dining' ? 'Total tables' : 'Total resources'} value={tables.length} />
+        <StatCard label="Active" value={occupied} tone="var(--color-warning)" />
+        <StatCard label="Empty" value={tables.length - occupied} tone="var(--color-success)" />
         <StatCard label="Pending revenue" value={`${Math.round(pendingRevenue / 1000)}K ${currency}`} tone="var(--color-accent-dark)" />
       </StatGrid>
 
-      <Card title="All tables">
+      <Card title={tab === 'dining' ? 'All tables' : 'Study tables & rooms'}>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-3">
           {tables.map((t) => (
             <button
@@ -60,7 +77,7 @@ export function TablesPage() {
                     : 'border-border bg-surface hover:border-border-strong')
               }
             >
-              <div className="text-lg font-bold text-ink">T{t.number}</div>
+              <div className="text-lg font-bold text-ink">{t.label ?? `T${t.number}`}</div>
               <div className="mt-1 flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted">
                 <span className={'size-1.5 rounded-full ' + (t.openOrder ? 'bg-warning' : 'bg-slate-300')} />
                 {t.openOrder ? 'Active' : 'Empty'}
@@ -68,20 +85,29 @@ export function TablesPage() {
               {t.openOrder && <div className="mt-1 text-[13px] font-semibold text-accent-dark">{money(t.openOrder.total, currency)}</div>}
             </button>
           ))}
+          {tables.length === 0 && <EmptyState>No resources yet</EmptyState>}
         </div>
       </Card>
 
       {detailTable && (
-        <Card title={`Table ${detailTable.number} — current order`}>
+        <Card title={`${detailTable.label ?? `Table ${detailTable.number}`} — current order`}>
           {!detailTable.openOrder ? (
             <EmptyState>No active order</EmptyState>
           ) : (
-            <TableDetailBody
-              orderId={detailTable.openOrder.id}
-              currency={currency}
-              onGoToCashier={() => navigate('/pos', { state: { tableId: detailTable.id } })}
-              onClear={() => setConfirmClear(true)}
-            />
+            <>
+              {tab === 'study' && (
+                <div className="mb-3 text-xs text-muted">
+                  This is a drink ordered during a Study booking — pay or clear it here like any other order. The table/room itself stays
+                  booked until this is settled.
+                </div>
+              )}
+              <TableDetailBody
+                orderId={detailTable.openOrder.id}
+                currency={currency}
+                onGoToCashier={() => navigate('/pos', { state: { tableId: detailTable.id } })}
+                onClear={() => setConfirmClear(true)}
+              />
+            </>
           )}
         </Card>
       )}

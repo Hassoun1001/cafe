@@ -1,24 +1,21 @@
 import bcrypt from 'bcryptjs';
+import type { AppSystem } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { signSessionToken } from '../lib/jwt';
 import { unauthorized } from '../lib/errors';
-import { getAppConfig } from './config.service';
 
-export async function login(password: string): Promise<string> {
-  const cfg = await getAppConfig();
-  const ok = await bcrypt.compare(password, cfg.passwordHash);
-  if (!ok) {
-    throw unauthorized('Wrong password', 'WRONG_PASSWORD');
-  }
-  return signSessionToken();
+export async function login(system: AppSystem, username: string, password: string): Promise<string> {
+  const user = await prisma.user.findFirst({ where: { system, username, active: true } });
+  if (!user) throw unauthorized('Invalid username or password', 'INVALID_CREDENTIALS');
+  const ok = await bcrypt.compare(password, user.passwordHash);
+  if (!ok) throw unauthorized('Invalid username or password', 'INVALID_CREDENTIALS');
+  return signSessionToken({ id: user.id, username: user.username, system: user.system });
 }
 
-export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
-  const cfg = await getAppConfig();
-  const ok = await bcrypt.compare(currentPassword, cfg.passwordHash);
-  if (!ok) {
-    throw unauthorized('Current password is incorrect', 'WRONG_PASSWORD');
-  }
+export async function changeOwnPassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!ok) throw unauthorized('Current password is incorrect', 'WRONG_PASSWORD');
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  await prisma.appConfig.update({ where: { id: cfg.id }, data: { passwordHash } });
+  await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
 }

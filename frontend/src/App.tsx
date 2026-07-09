@@ -1,8 +1,10 @@
 import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { useAuth } from './lib/auth';
+import { AuthProvider, useAuth } from './lib/auth';
+import { StudyAuthProvider, useStudyAuth } from './lib/studyAuth';
 import { Layout } from './layout/Layout';
-import { LoginPage } from './pages/LoginPage';
+import { StudyLayout } from './layout/StudyLayout';
+import { UnifiedLoginPage } from './pages/UnifiedLoginPage';
 import { Spinner } from './components/ui';
 
 const PosPage = lazy(() => import('./pages/PosPage').then((m) => ({ default: m.PosPage })));
@@ -13,20 +15,34 @@ const EmployeesPage = lazy(() => import('./pages/EmployeesPage').then((m) => ({ 
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 
+const BoardPage = lazy(() => import('./pages/study/BoardPage').then((m) => ({ default: m.BoardPage })));
+const HistoryPage = lazy(() => import('./pages/study/HistoryPage').then((m) => ({ default: m.HistoryPage })));
+const StudySettingsPage = lazy(() => import('./pages/study/StudySettingsPage').then((m) => ({ default: m.StudySettingsPage })));
+
 function ProtectedLayout() {
   const { isAuthenticated } = useAuth();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <Layout />;
 }
 
-export function App() {
+function StudyProtectedLayout() {
+  const { isAuthenticated } = useStudyAuth();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <StudyLayout />;
+}
+
+// The Cafe and Study apps are two independent systems sharing one deploy —
+// separate auth contexts, separate route trees, and neither can
+// authenticate against the other. They share one login page
+// (UnifiedLoginPage, mounted at the top level below) where the user picks
+// which system to sign into before entering a username/password.
+function CafeApp() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedLayout />}>
-        <Route index element={<Navigate to="/pos" replace />} />
+        <Route index element={<Navigate to="pos" replace />} />
         <Route
-          path="/pos"
+          path="pos"
           element={
             <Suspense fallback={<Spinner />}>
               <PosPage />
@@ -34,7 +50,7 @@ export function App() {
           }
         />
         <Route
-          path="/tables"
+          path="tables"
           element={
             <Suspense fallback={<Spinner />}>
               <TablesPage />
@@ -42,7 +58,7 @@ export function App() {
           }
         />
         <Route
-          path="/warehouse"
+          path="warehouse"
           element={
             <Suspense fallback={<Spinner />}>
               <WarehousePage />
@@ -50,7 +66,7 @@ export function App() {
           }
         />
         <Route
-          path="/tracker"
+          path="tracker"
           element={
             <Suspense fallback={<Spinner />}>
               <TrackerPage />
@@ -58,7 +74,7 @@ export function App() {
           }
         />
         <Route
-          path="/employees"
+          path="employees"
           element={
             <Suspense fallback={<Spinner />}>
               <EmployeesPage />
@@ -66,7 +82,7 @@ export function App() {
           }
         />
         <Route
-          path="/reports"
+          path="reports"
           element={
             <Suspense fallback={<Spinner />}>
               <ReportsPage />
@@ -74,7 +90,7 @@ export function App() {
           }
         />
         <Route
-          path="/settings"
+          path="settings"
           element={
             <Suspense fallback={<Spinner />}>
               <SettingsPage />
@@ -84,5 +100,54 @@ export function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+  );
+}
+
+function StudyApp() {
+  return (
+    <Routes>
+      <Route element={<StudyProtectedLayout />}>
+        <Route index element={<Navigate to="board" replace />} />
+        <Route
+          path="board"
+          element={
+            <Suspense fallback={<Spinner />}>
+              <BoardPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="history"
+          element={
+            <Suspense fallback={<Spinner />}>
+              <HistoryPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="settings"
+          element={
+            <Suspense fallback={<Spinner />}>
+              <StudySettingsPage />
+            </Suspense>
+          }
+        />
+      </Route>
+      <Route path="*" element={<Navigate to="/study" replace />} />
+    </Routes>
+  );
+}
+
+export function App() {
+  return (
+    <AuthProvider>
+      <StudyAuthProvider>
+        <Routes>
+          <Route path="/login" element={<UnifiedLoginPage />} />
+          <Route path="/study/*" element={<StudyApp />} />
+          <Route path="/*" element={<CafeApp />} />
+        </Routes>
+      </StudyAuthProvider>
+    </AuthProvider>
   );
 }

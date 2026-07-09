@@ -205,18 +205,25 @@ export function Modal({
   title,
   children,
   wide,
+  maxWidth,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
   wide?: boolean;
+  /** Explicit CSS width (e.g. "800px"), overrides `wide` when set — for content like a full menu grid that needs more room than the standard modal sizes. */
+  maxWidth?: string;
 }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]" onClick={onClose}>
       <div
-        className={clsx('max-h-[90vh] overflow-y-auto rounded-2xl bg-surface p-6 shadow-[var(--shadow-elevated)]', wide ? 'w-[540px]' : 'w-[420px]')}
+        className={clsx(
+          'max-h-[90vh] overflow-y-auto rounded-2xl bg-surface p-6 shadow-[var(--shadow-elevated)]',
+          !maxWidth && (wide ? 'w-[540px]' : 'w-[420px]'),
+        )}
+        style={maxWidth ? { width: maxWidth, maxWidth: '92vw' } : undefined}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-5 text-base font-semibold text-ink">{title}</div>

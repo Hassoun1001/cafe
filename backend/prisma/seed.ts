@@ -95,20 +95,36 @@ const EMPLOYEES = [
   { name: 'Amer Al Kellawi', nameAr: 'عامر الكلاوي' },
 ];
 
+const NUM_STUDY_TABLES = 9;
+const NUM_STUDY_ROOMS = 2;
+// Deliberately NOT the old shared password (01090703) — that one is already
+// public (README history, chat logs) and must never be reused for a real
+// credential. This is a one-time bootstrap value; change it immediately.
+const DEFAULT_ADMIN_PASSWORD = 'StudioCafe#2026Setup';
+
 async function main() {
   // AppConfig singleton — only create if missing so re-running seed never resets settings.
   const existingConfig = await prisma.appConfig.findFirst();
   if (!existingConfig) {
-    const passwordHash = await bcrypt.hash('01090703', 10);
     await prisma.appConfig.create({
       data: {
-        passwordHash,
         receiptName: 'Studio Cafe',
         receiptFooter: 'Thank you! Focus. Connect. Inspire.',
         currency: 'SYP',
       },
     });
-    console.log('Seeded AppConfig (default password: 01090703)');
+    console.log('Seeded AppConfig');
+  }
+
+  // One default admin account per system — separate logins, same bootstrap
+  // password for onboarding convenience. Change both immediately after first login.
+  for (const system of ['CAFE', 'STUDY'] as const) {
+    const existingAdmin = await prisma.user.findFirst({ where: { system, username: 'admin' } });
+    if (!existingAdmin) {
+      const passwordHash = await bcrypt.hash(DEFAULT_ADMIN_PASSWORD, 10);
+      await prisma.user.create({ data: { system, username: 'admin', passwordHash } });
+      console.log(`Seeded ${system} admin user (username: admin) — change the bootstrap password immediately`);
+    }
   }
 
   const existingVat = await prisma.taxRate.findUnique({ where: { name: 'VAT' } });
@@ -173,6 +189,32 @@ async function main() {
     });
   }
   console.log(`Seeded ${NUM_TABLES} tables`);
+
+  const existingStudyConfig = await prisma.studyConfig.findFirst();
+  if (!existingStudyConfig) {
+    await prisma.studyConfig.create({ data: { tableHourlyRate: 0, roomHourlyRate: 0, currency: 'SYP' } });
+    console.log('Seeded StudyConfig (hourly rates: 0 — set real rates from Study Settings)');
+  }
+
+  // Study tables/rooms are plain CafeTable rows (kind STUDY_TABLE/STUDY_ROOM)
+  // numbered 101+ so they never collide with the 1-30 dining table range.
+  for (let n = 1; n <= NUM_STUDY_TABLES; n++) {
+    const number = 100 + n;
+    await prisma.cafeTable.upsert({
+      where: { number },
+      update: {},
+      create: { number, label: `Study Table ${n}`, kind: 'STUDY_TABLE' },
+    });
+  }
+  for (let n = 1; n <= NUM_STUDY_ROOMS; n++) {
+    const number = 200 + n;
+    await prisma.cafeTable.upsert({
+      where: { number },
+      update: {},
+      create: { number, label: `Room ${n}`, kind: 'STUDY_ROOM' },
+    });
+  }
+  console.log(`Seeded ${NUM_STUDY_TABLES} study tables + ${NUM_STUDY_ROOMS} study rooms`);
 }
 
 main()

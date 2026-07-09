@@ -1,19 +1,25 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
+import type { AppSystem } from '@prisma/client';
 
-const TOKEN_SUBJECT = 'studio-cafe-session';
+export interface SessionPayload {
+  sub: string;
+  username: string;
+  system: AppSystem;
+}
 
-export function signSessionToken(): string {
-  return jwt.sign({ sub: TOKEN_SUBJECT }, config.jwtSecret, {
+export function signSessionToken(user: { id: string; username: string; system: AppSystem }): string {
+  return jwt.sign({ sub: user.id, username: user.username, system: user.system }, config.jwtSecret, {
     expiresIn: config.jwtExpiresIn,
   } as jwt.SignOptions);
 }
 
-export function verifySessionToken(token: string): boolean {
+export function verifySessionToken(token: string): SessionPayload | null {
   try {
-    const payload = jwt.verify(token, config.jwtSecret) as jwt.JwtPayload | string;
-    return typeof payload === 'object' && payload.sub === TOKEN_SUBJECT;
+    const payload = jwt.verify(token, config.jwtSecret);
+    if (typeof payload !== 'object' || !payload || !('sub' in payload) || !('system' in payload)) return null;
+    return payload as unknown as SessionPayload;
   } catch {
-    return false;
+    return null;
   }
 }

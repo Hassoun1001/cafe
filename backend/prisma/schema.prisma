@@ -31,10 +31,29 @@ enum ConsumptionType {
   DEDUCT
 }
 
-// Singleton row (single shared cafe-wide config, matches the single shared login).
+// Two independent applications share this database: the Cafe POS and the
+// Study table/room booking system. A User belongs to exactly one — logging
+// into one never grants access to the other.
+enum AppSystem {
+  CAFE
+  STUDY
+}
+
+model User {
+  id           String    @id @default(uuid())
+  system       AppSystem
+  username     String
+  passwordHash String
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([system, username])
+}
+
+// Singleton row (cafe-wide receipt/currency config — auth moved to User).
 model AppConfig {
   id            String   @id @default(uuid())
-  passwordHash  String
   receiptName   String   @default("Studio Cafe")
   receiptFooter String   @default("Thank you! Focus. Connect. Inspire.")
   currency      String   @default("SYP")
@@ -102,13 +121,26 @@ model MenuItemIngredient {
   @@index([stockItemId])
 }
 
+// DINING tables are the cafe floor (what the POS/Tables pages show). STUDY_
+// TABLE/STUDY_ROOM rows are booked hourly by the separate Study system —
+// they're still plain CafeTable rows so a drink ordered during a study
+// session can go through the exact same Order pipeline (openOrderForTable/
+// addItem/pay) as any dining table, no parallel order model needed.
+enum TableKind {
+  DINING
+  STUDY_TABLE
+  STUDY_ROOM
+}
+
 model CafeTable {
-  id        String   @id @default(uuid())
-  number    Int      @unique
-  label     String?
-  active    Boolean  @default(true)
-  orders    Order[]
-  createdAt DateTime @default(now())
+  id            String         @id @default(uuid())
+  number        Int            @unique
+  label         String?
+  kind          TableKind      @default(DINING)
+  active        Boolean        @default(true)
+  orders        Order[]
+  studyBookings StudyBooking[]
+  createdAt     DateTime       @default(now())
 }
 
 model Order {
@@ -129,6 +161,11 @@ model Order {
   changeGiven     Decimal?       @db.Decimal(12, 2)
   openedAt        DateTime       @default(now())
   closedAt        DateTime?
+  studyBooking    StudyBooking?
+  // Set only for orders created by the Excel ledger importer (e.g.
+  // "legacy-640" from invoice/entry number 640) — doubles as the
+  // idempotency key so re-uploading the same file never creates duplicates.
+  importRef       String?        @unique
 
   @@index([tableId])
   @@index([status])
@@ -260,4 +297,53 @@ model DiscountPreset {
   percent   Decimal  @db.Decimal(5, 2)
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
+}
+
+// Singleton — separate hourly rates for tables vs. rooms (rooms are priced
+// independently and never get free time from drinks, unlike tables). This
+// is billed separately from any drink, which goes through the normal Cafe
+// order attached via cafeOrderId below.
+model StudyConfig {
+  id              String   @id @default(uuid())
+  tableHourlyRate Decimal  @default(0) @db.Decimal(12, 2)
+  roomHourlyRate  Decimal  @default(0) @db.Decimal(12, 2)
+  currency        String   @default("SYP")
+  updatedAt       DateTime @updatedAt
+}
+
+enum StudyBookingStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+// A study table/room booked by the hour, billed by actual elapsed time (no
+// manual hour entry) — see computeBilling in study.service.ts. `endTime` is
+// null while ACTIVE and only set when the session is settled (completed or
+// cancelled). For a STUDY_TABLE, each drink ordered grants 90 minutes of
+// free table time (stacking: 2 drinks = 180 min free) before the hourly
+// rate starts applying to the remainder; a STUDY_ROOM always bills its full
+// elapsed time regardless of drinks. `hours`/`roomFee` are 0 while ACTIVE
+// and only computed at settlement.
+model StudyBooking {
+  id            String             @id @default(uuid())
+  tableId       String
+  table         CafeTable          @relation(fields: [tableId], references: [id])
+  status        StudyBookingStatus @default(ACTIVE)
+  customerName  String?
+  startTime     DateTime           @default(now())
+  endTime       DateTime?
+  hours         Decimal            @default(0) @db.Decimal(6, 2)
+  hourlyRate    Decimal            @db.Decimal(12, 2)
+  roomFee       Decimal            @default(0) @db.Decimal(12, 2)
+  drinkCount    Int                @default(0)
+  cafeOrderId   String?            @unique
+  cafeOrder     Order?             @relation(fields: [cafeOrderId], references: [id])
+  paid          Boolean            @default(false)
+  paymentMethod PaymentMethod?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([tableId])
+  @@index([status])
 }

@@ -17,12 +17,29 @@ import type {
   TaxRateDto,
   TrackerHistoryDto,
   TrackerRowDto,
+  UserDto,
+  ImportResultDto,
 } from '../types';
 
 // Auth
-export const login = (password: string) => api.post<{ token: string }>('/auth/login', { password }).then((r) => r.data);
+export const login = (username: string, password: string) => api.post<{ token: string }>('/auth/login', { username, password }).then((r) => r.data);
 export const changePassword = (currentPassword: string, newPassword: string) =>
   api.post('/auth/change-password', { currentPassword, newPassword }).then((r) => r.data);
+
+// Users (Cafe system accounts)
+export const getUsers = () => api.get<UserDto[]>('/users').then((r) => r.data);
+export const createUser = (username: string, password: string) => api.post<UserDto>('/users', { username, password }).then((r) => r.data);
+export const updateUser = (id: string, data: Partial<{ username: string; active: boolean }>) =>
+  api.put<UserDto>(`/users/${id}`, data).then((r) => r.data);
+export const resetUserPassword = (id: string, newPassword: string) => api.post(`/users/${id}/reset-password`, { newPassword }).then((r) => r.data);
+export const deleteUser = (id: string) => api.delete(`/users/${id}`);
+
+// Import
+export const importSalesLedger = (file: File) => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post<ImportResultDto>('/import/sales-ledger', form).then((r) => r.data);
+};
 
 // Menu
 export const getMenu = () => api.get<MenuCategoryDto[]>('/menu').then((r) => r.data);
@@ -45,7 +62,7 @@ export const removeRecipeIngredient = (menuItemId: string, stockItemId: string) 
   api.delete<RecipeIngredientDto[]>(`/menu/items/${menuItemId}/recipe/${stockItemId}`).then((r) => r.data);
 
 // Tables
-export const getTables = () => api.get<CafeTableDto[]>('/tables').then((r) => r.data);
+export const getTables = (kind?: 'study') => api.get<CafeTableDto[]>('/tables', { params: { kind } }).then((r) => r.data);
 export const createTable = (data: { number: number; label?: string }) => api.post('/tables', data).then((r) => r.data);
 export const deleteTable = (id: string) => api.delete(`/tables/${id}`);
 

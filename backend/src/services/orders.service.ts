@@ -276,6 +276,22 @@ export async function removeTaxFromOrder(orderId: string, taxRateId: string) {
   });
 }
 
+// A drink ordered during a Study booking is a real Order on that resource's
+// linked table — paid/voided through this exact same Cafe flow (tax, receipt,
+// Sales history) as any dining order, deliberately not auto-settled from the
+// Study side. If that order belongs to a StudyBooking whose room/table fee
+// has already been checked out Study-side (`paid: true`), settling the order
+// here is the second half of that booking's checkout — finalize it so the
+// resource becomes free again. If the room fee hasn't been paid yet, this
+// order being settled isn't enough on its own; the booking stays ACTIVE
+// (still occupying the resource) until the Study side also checks out.
+async function completeLinkedStudyBookingIfReady(orderId: string) {
+  const booking = await prisma.studyBooking.findUnique({ where: { cafeOrderId: orderId } });
+  if (booking && booking.status === 'ACTIVE' && booking.paid) {
+    await prisma.studyBooking.update({ where: { id: booking.id }, data: { status: 'COMPLETED' } });
+  }
+}
+
 export async function payOrder(orderId: string, method: 'CASH' | 'CARD', cashReceived?: number) {
   const order = await findOrderOrThrow(orderId);
   if (order.status !== 'OPEN') throw badRequest('Order is not open', 'ORDER_NOT_OPEN');
@@ -287,19 +303,19 @@ export async function payOrder(orderId: string, method: 'CASH' | 'CARD', cashRec
   }
   const changeGiven = method === 'CASH' ? round2((cashReceived as number) - total) : null;
 
-  return serializeOrder(
-    await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status: 'PAID',
-        paymentMethod: method,
-        cashReceived: method === 'CASH' ? cashReceived : null,
-        changeGiven,
-        closedAt: new Date(),
-      },
-      include: orderInclude,
-    }),
-  );
+  const paid = await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      status: 'PAID',
+      paymentMethod: method,
+      cashReceived: method === 'CASH' ? cashReceived : null,
+      changeGiven,
+      closedAt: new Date(),
+    },
+    include: orderInclude,
+  });
+  await completeLinkedStudyBookingIfReady(orderId);
+  return serializeOrder(paid);
 }
 
 // Open orders are soft-cancelled (kept for audit) after restoring any stock
@@ -315,6 +331,7 @@ export async function deleteOrder(orderId: string) {
       }
       await tx.order.update({ where: { id: orderId }, data: { status: 'CANCELLED', closedAt: new Date() } });
     });
+    await completeLinkedStudyBookingIfReady(orderId);
     return;
   }
   await prisma.order.delete({ where: { id: orderId } });

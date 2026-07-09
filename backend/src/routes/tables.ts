@@ -9,8 +9,12 @@ tablesRouter.use(authenticate);
 
 tablesRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
-    res.json(await tablesService.listTables());
+  asyncHandler(async (req, res) => {
+    // Cafe staff can view Study tables/rooms (and their linked bills) from
+    // this same authenticated Cafe endpoint without needing Study
+    // credentials — ?kind=study switches to that view, default stays DINING.
+    const kinds = req.query.kind === 'study' ? (['STUDY_TABLE', 'STUDY_ROOM'] as const) : undefined;
+    res.json(await tablesService.listTables(kinds ? [...kinds] : undefined));
   }),
 );
 

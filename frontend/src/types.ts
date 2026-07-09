@@ -23,10 +23,13 @@ export interface TableOpenOrderSummary {
   total: number;
 }
 
+export type TableKind = 'DINING' | 'STUDY_TABLE' | 'STUDY_ROOM';
+
 export interface CafeTableDto {
   id: string;
   number: number;
   label: string | null;
+  kind: TableKind;
   active: boolean;
   openOrder: TableOpenOrderSummary | null;
 }
@@ -186,4 +189,55 @@ export interface RecipeIngredientDto {
   stockItemName: string;
   unit: string;
   qtyPerUnit: number;
+}
+
+export interface UserDto {
+  id: string;
+  username: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface ImportResultDto {
+  imported: number;
+  alreadyImported: number;
+  skipped: number;
+  skippedDetails: string[];
+}
+
+// --- Study booking system ---
+
+export type StudyBookingStatus = 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+
+export interface StudyResourceDto {
+  id: string;
+  number: number;
+  label: string | null;
+  kind: TableKind;
+  active: boolean;
+  openOrder: TableOpenOrderSummary | null;
+}
+
+export interface StudyBookingDto {
+  id: string;
+  table: { id: string; number: number; label: string | null; kind: TableKind };
+  status: StudyBookingStatus;
+  customerName: string | null;
+  startTime: string;
+  endTime: string | null;
+  hours: number;
+  hourlyRate: number;
+  roomFee: number;
+  drinkCount: number;
+  cafeOrderId: string | null;
+  paid: boolean;
+  paymentMethod: 'CASH' | 'CARD' | null;
+  createdAt: string;
+}
+
+export interface StudyConfigDto {
+  id: string;
+  tableHourlyRate: number;
+  roomHourlyRate: number;
+  currency: string;
 }
