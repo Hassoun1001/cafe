@@ -30,6 +30,7 @@ export const salesHistoryQuerySchema = z.object({
   to: z.string().optional(),
   table: z.coerce.number().int().optional(),
   payment: z.enum(['CASH', 'CARD']).optional(),
+  status: z.enum(['PAID', 'CANCELLED']).optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   // Capped at 5000 rather than a tight page size so the frontend can request
   // the FULL matching result set in one call for Excel/PDF export, while the

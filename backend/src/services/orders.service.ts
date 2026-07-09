@@ -342,10 +342,11 @@ export async function listSalesHistory(filters: {
   to?: string;
   table?: number;
   payment?: 'CASH' | 'CARD';
+  status?: 'PAID' | 'CANCELLED';
   page: number;
   pageSize: number;
 }) {
-  const where: Prisma.OrderWhereInput = { status: 'PAID' };
+  const where: Prisma.OrderWhereInput = { status: filters.status ?? 'PAID' };
   if (filters.from || filters.to) {
     where.closedAt = {};
     if (filters.from) where.closedAt.gte = new Date(filters.from);
