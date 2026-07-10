@@ -56,16 +56,16 @@ export async function deleteTable(id: string) {
   if (!existing) throw notFound('Table not found');
   if (existing.orders.length > 0) throw badRequest('Cannot delete a table with an open order', 'TABLE_HAS_OPEN_ORDER');
   if (existing.studyBookings.length > 0) throw badRequest('Cannot delete a resource with an active booking', 'RESOURCE_HAS_ACTIVE_BOOKING');
-  // A table with any order history (even fully paid, closed sales) can't be
+  // A table with any order history (paid, cancelled, or otherwise) can't be
   // hard-deleted — Order.tableId has no cascade, so the DB would otherwise
-  // reject this with a raw foreign-key error. Renaming/deactivating instead
-  // preserves the sales record; only a genuinely never-used table can go.
-  const allOrders = await prisma.order.findMany({ where: { tableId: id }, select: { id: true, orderNumber: true, status: true } });
-  if (allOrders.length > 0) {
-    throw badRequest(
-      `Cannot delete a table with sales history — it has past orders on record: ${JSON.stringify(allOrders)}. Rename it instead if it's no longer needed.`,
-      'TABLE_HAS_ORDER_HISTORY',
-    );
+  // reject this with a raw foreign-key error. Note "Clear sales" in the
+  // Danger Zone only removes PAID orders, so a table can still be blocked by
+  // leftover CANCELLED/void orders even after clearing sales history.
+  // Renaming/deactivating instead preserves any real sales record; only a
+  // table with zero order history can be hard-deleted.
+  const orderCount = await prisma.order.count({ where: { tableId: id } });
+  if (orderCount > 0) {
+    throw badRequest('Cannot delete a table with sales history — it has past orders on record. Rename it instead if it\'s no longer needed.', 'TABLE_HAS_ORDER_HISTORY');
   }
   await prisma.cafeTable.delete({ where: { id } });
 }
