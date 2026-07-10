@@ -14,6 +14,7 @@ export function WarehousePage() {
   const categoriesQuery = useQuery({ queryKey: ['settings', 'stock-categories'], queryFn: api.getStockCategories });
   const unitsQuery = useQuery({ queryKey: ['settings', 'stock-units'], queryFn: api.getStockUnits });
   const currency = settingsQuery.data?.currency ?? 'SYP';
+  const usdRate = settingsQuery.data?.usdExchangeRate;
   const categories = categoriesQuery.data ?? [];
   const units = unitsQuery.data ?? [];
 
@@ -92,7 +93,7 @@ export function WarehousePage() {
       <StatGrid>
         <StatCard label="Items" value={stock.length} />
         <StatCard label="Low alerts" value={low.length} tone={low.length ? 'var(--color-danger)' : 'var(--color-success)'} />
-        <StatCard label="Stock value" value={Math.round(value / 1000) + 'K'} />
+        <StatCard label="Stock value" value={Math.round(value / 1000) + 'K' + (usdRate ? ` (≈ $${(value / usdRate).toFixed(0)})` : '')} />
       </StatGrid>
 
       {low.length > 0 ? (

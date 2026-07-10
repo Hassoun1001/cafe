@@ -18,6 +18,7 @@ export function EmployeesPage() {
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const menuQuery = useQuery({ queryKey: ['menu'], queryFn: api.getMenu });
   const currency = settingsQuery.data?.currency ?? 'SYP';
+  const usdRate = settingsQuery.data?.usdExchangeRate;
 
   const employees = employeesQuery.data ?? [];
   const menuItems = useMemo(() => (menuQuery.data ?? []).flatMap((c) => c.items), [menuQuery.data]);
@@ -175,7 +176,7 @@ export function EmployeesPage() {
                     <td className="py-2.5 pr-3 text-muted">{formatDateTime(l.date)}</td>
                     <td className="py-2.5 pr-3 font-medium text-ink">{l.employee}</td>
                     <td className="py-2.5 pr-3 text-ink">{l.itemName}</td>
-                    <td className="py-2.5 pr-3 text-ink">{money(l.price, currency)}</td>
+                    <td className="py-2.5 pr-3 text-ink">{money(l.price, currency, usdRate)}</td>
                     <td className="py-2.5 pr-3">
                       <Badge tone={l.type === 'FREE' ? 'green' : 'amber'}>{l.type === 'FREE' ? 'Free' : 'Deduct'}</Badge>
                     </td>
@@ -199,8 +200,8 @@ export function EmployeesPage() {
               {summary.map((s) => (
                 <div key={s.name} className="rounded-2xl border border-border bg-surface p-4">
                   <div className="mb-1.5 text-[13px] font-medium text-muted">{s.name}</div>
-                  <div className="text-sm font-semibold text-success">Free: {money(s.free, currency)}</div>
-                  <div className="text-sm font-semibold text-danger">Deduct: {money(s.deduct, currency)}</div>
+                  <div className="text-sm font-semibold text-success">Free: {money(s.free, currency, usdRate)}</div>
+                  <div className="text-sm font-semibold text-danger">Deduct: {money(s.deduct, currency, usdRate)}</div>
                 </div>
               ))}
             </StatGrid>

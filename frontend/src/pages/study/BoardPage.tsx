@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Coffee, Plus, Check, Ban, Trash2, Search } from 'lucide-react';
+import { Coffee, Plus, Check, Ban, Trash2, Search, RotateCcw } from 'lucide-react';
 import * as api from '../../api/studyEndpoints';
 import { useToast } from '../../lib/toast';
 import { apiErrorMessage } from '../../lib/api';
@@ -32,6 +32,7 @@ export function BoardPage() {
   const menuQuery = useQuery({ queryKey: ['study', 'menu'], queryFn: api.getMenu });
   const configQuery = useQuery({ queryKey: ['study', 'config'], queryFn: api.getConfig });
   const currency = configQuery.data?.currency ?? 'SYP';
+  const usdRate = configQuery.data?.usdExchangeRate;
 
   const [bookModalTable, setBookModalTable] = useState<StudyResourceDto | null>(null);
   const [customerName, setCustomerName] = useState('');
@@ -41,6 +42,7 @@ export function BoardPage() {
   const [drinkCategory, setDrinkCategory] = useState('All');
 
   const [checkoutBooking, setCheckoutBooking] = useState<StudyBookingDto | null>(null);
+  const [resetTimerBookingId, setResetTimerBookingId] = useState<string | null>(null);
   const [cancelBookingId, setCancelBookingId] = useState<string | null>(null);
   const [deleteBookingId, setDeleteBookingId] = useState<string | null>(null);
 
@@ -78,6 +80,19 @@ export function BoardPage() {
       toast.show('Checked out', 'success');
     },
     onError: (e) => toast.show(apiErrorMessage(e), 'error'),
+  });
+
+  const resetTimer = useMutation({
+    mutationFn: (id: string) => api.resetTimer(id),
+    onSuccess: () => {
+      invalidate();
+      setResetTimerBookingId(null);
+      toast.show('Timer restarted', 'success');
+    },
+    onError: (e) => {
+      setResetTimerBookingId(null);
+      toast.show(apiErrorMessage(e), 'error');
+    },
   });
 
   const cancelBooking = useMutation({
@@ -149,7 +164,7 @@ export function BoardPage() {
           <>
             <div className="mb-1 text-xs text-muted">{booking.customerName || 'Walk-in'}</div>
             <div className="mb-1 text-sm font-semibold text-ink">
-              {formatMinutes(booking.hours * 60)} · {money(booking.roomFee, currency)} paid
+              {formatMinutes(booking.hours * 60)} · {money(booking.roomFee, currency, usdRate)} paid
             </div>
             <div className="mb-3 flex items-center gap-1 text-xs text-warning">
               <Coffee className="size-3.5" />
@@ -172,7 +187,7 @@ export function BoardPage() {
               </div>
             )}
             <div className="mb-3 text-sm font-semibold text-warning">
-              {billing.hours > 0 ? `${billing.hours} hour${billing.hours > 1 ? 's' : ''} — ${money(billing.fee, currency)}` : 'Free so far'}
+              {billing.hours > 0 ? `${billing.hours} hour${billing.hours > 1 ? 's' : ''} — ${money(billing.fee, currency, usdRate)}` : 'Free so far'}
             </div>
             {booking.drinkCount > 0 && (
               <div className="mb-3 flex items-center gap-1 text-xs text-muted">
@@ -188,6 +203,9 @@ export function BoardPage() {
               <Button size="sm" variant="primary" onClick={() => setCheckoutBooking(booking)}>
                 <Check className="size-3.5" />
                 Checkout
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setResetTimerBookingId(booking.id)} title="Restart the clock to now">
+                <RotateCcw className="size-3.5" />
               </Button>
               <Button size="sm" variant="secondary" onClick={() => setCancelBookingId(booking.id)}>
                 <Ban className="size-3.5" />
@@ -323,7 +341,7 @@ export function BoardPage() {
               </div>
               <div className="flex justify-between border-t border-border py-1 pt-2">
                 <span className="text-muted">Table/room fee</span>
-                <span className="font-semibold text-ink">{money(checkoutBilling.fee, currency)}</span>
+                <span className="font-semibold text-ink">{money(checkoutBilling.fee, currency, usdRate)}</span>
               </div>
               {checkoutBooking.drinkCount > 0 && (
                 <div className="flex justify-between py-1 text-muted">
@@ -349,6 +367,15 @@ export function BoardPage() {
           </>
         )}
       </Modal>
+
+      <ConfirmModal
+        open={!!resetTimerBookingId}
+        onClose={() => setResetTimerBookingId(null)}
+        onConfirm={() => resetTimerBookingId && resetTimer.mutate(resetTimerBookingId)}
+        title="Restart the clock?"
+        message="Sets the start time to right now — use this after the customer has paid for the current hour and is staying for another. Any drinks added so far stay on the booking."
+        confirmLabel="Restart clock"
+      />
 
       <ConfirmModal
         open={!!cancelBookingId}

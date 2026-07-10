@@ -1,7 +1,14 @@
 import type { Response } from 'express';
 
-export function money(n: number, currency: string): string {
-  return `${Math.round(n).toLocaleString('en-US')} ${currency}`;
+// usdRate is SYP per 1 USD (from Settings) — when provided and > 0, appends
+// a "(~ $X.XX)" USD-equivalent alongside the amount. Purely a display
+// extra; the amount itself is always the real stored/charged currency.
+// Plain ASCII "~" rather than "≈" — pdfkit's default font encoding doesn't
+// reliably survive that Unicode character in these report PDFs.
+export function money(n: number, currency: string, usdRate?: number | null): string {
+  const base = `${Math.round(n).toLocaleString('en-US')} ${currency}`;
+  if (!usdRate) return base;
+  return `${base} (~ $${(n / usdRate).toFixed(2)})`;
 }
 
 export function formatDateTime(value: string | Date): string {

@@ -10,6 +10,7 @@ export function HistoryPage() {
   const bookingsQuery = useQuery({ queryKey: ['study', 'bookings', filter], queryFn: () => api.getBookings(filter) });
   const configQuery = useQuery({ queryKey: ['study', 'config'], queryFn: api.getConfig });
   const currency = configQuery.data?.currency ?? 'SYP';
+  const usdRate = configQuery.data?.usdExchangeRate;
 
   const bookings = bookingsQuery.data ?? [];
   const totalRevenue = useMemo(() => bookings.reduce((s, b) => s + (b.paid ? b.roomFee : 0), 0), [bookings]);
@@ -20,7 +21,7 @@ export function HistoryPage() {
 
       <StatGrid>
         <StatCard label="Sessions" value={bookings.length} />
-        <StatCard label="Room fee revenue" value={money(totalRevenue, currency)} tone="var(--color-accent-dark)" />
+        <StatCard label="Room fee revenue" value={money(totalRevenue, currency, usdRate)} tone="var(--color-accent-dark)" />
         <StatCard label="With a drink" value={bookings.filter((b) => b.drinkCount > 0).length} />
       </StatGrid>
 
@@ -63,7 +64,7 @@ export function HistoryPage() {
                     <td className="py-2.5 pr-3 text-muted">{b.customerName || 'Walk-in'}</td>
                     <td className="py-2.5 pr-3 text-xs text-muted">{formatDateTime(b.startTime)}</td>
                     <td className="py-2.5 pr-3 text-ink">{b.hours}h</td>
-                    <td className="py-2.5 pr-3 font-semibold text-ink">{money(b.roomFee, currency)}</td>
+                    <td className="py-2.5 pr-3 font-semibold text-ink">{money(b.roomFee, currency, usdRate)}</td>
                     <td className="py-2.5 pr-3">{b.drinkCount > 0 ? <Badge tone="blue">×{b.drinkCount}</Badge> : <span className="text-muted-2">—</span>}</td>
                     <td className="py-2.5">
                       {b.paid ? <Badge tone={b.paymentMethod === 'CASH' ? 'green' : 'blue'}>{b.paymentMethod}</Badge> : <Badge tone="gray">Unpaid</Badge>}

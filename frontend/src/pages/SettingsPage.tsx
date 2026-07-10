@@ -6,7 +6,7 @@ import { useToast } from '../lib/toast';
 import { apiErrorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { money } from '../lib/format';
-import { Badge, Button, Card, ConfirmModal, Input, Label, Modal, PageHeader } from '../components/ui';
+import { Badge, Button, Card, ConfirmModal, Input, Label, Modal, PageHeader, Select } from '../components/ui';
 import { RecipeEditorModal } from '../components/RecipeEditorModal';
 import type { ImportResultDto, MenuItemDto } from '../types';
 
@@ -172,7 +172,31 @@ export function SettingsPage() {
     },
   });
 
-  // --- menu item delete ---
+  // --- menu item add / delete ---
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemNameAr, setNewItemNameAr] = useState('');
+  const [newItemSub, setNewItemSub] = useState('');
+  const [newItemPrice, setNewItemPrice] = useState('');
+  const [newItemCategoryId, setNewItemCategoryId] = useState('');
+  const addMenuItem = useMutation({
+    mutationFn: () =>
+      api.createMenuItem({
+        name: newItemName.trim(),
+        nameAr: newItemNameAr.trim() || undefined,
+        sub: newItemSub.trim() || undefined,
+        price: parseFloat(newItemPrice) || 0,
+        categoryId: newItemCategoryId,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['menu'] });
+      setNewItemName('');
+      setNewItemNameAr('');
+      setNewItemSub('');
+      setNewItemPrice('');
+      toast.show('Item added', 'success');
+    },
+    onError: (e) => toast.show(apiErrorMessage(e), 'error'),
+  });
   const removeMenuItem = useMutation({
     mutationFn: (id: string) => api.deleteMenuItem(id),
     onSuccess: () => {
@@ -442,13 +466,27 @@ export function SettingsPage() {
             onBlur={(e) => updateSettings.mutate({ receiptFooter: e.target.value })}
           />
         </div>
-        <div className="flex items-center justify-between py-3.5 last:pb-0">
+        <div className="flex items-center justify-between border-b border-border py-3.5">
           <div className="text-sm font-medium text-ink">Currency</div>
           <Input
             className="w-24"
             defaultValue={settings?.currency}
             key={`cur-${settings?.currency}`}
             onBlur={(e) => updateSettings.mutate({ currency: e.target.value || 'SYP' })}
+          />
+        </div>
+        <div className="flex items-center justify-between py-3.5 last:pb-0">
+          <div>
+            <div className="text-sm font-medium text-ink">USD exchange rate</div>
+            <div className="text-xs text-muted">SYP per 1 USD — shows a $ equivalent next to prices everywhere. 0 hides it.</div>
+          </div>
+          <Input
+            type="number"
+            className="w-32"
+            defaultValue={settings?.usdExchangeRate}
+            key={`usd-${settings?.usdExchangeRate}`}
+            placeholder="e.g. 15000"
+            onBlur={(e) => updateSettings.mutate({ usdExchangeRate: parseFloat(e.target.value) || 0 })}
           />
         </div>
       </Card>
@@ -518,7 +556,7 @@ export function SettingsPage() {
                               </span>
                             )}
                           </span>
-                          <span className="text-muted">{item.price > 0 ? money(item.price, settings?.currency) : 'price TBD'}</span>
+                          <span className="text-muted">{item.price > 0 ? money(item.price, settings?.currency, settings?.usdExchangeRate) : 'price TBD'}</span>
                         </div>
                       ))
                     )}
@@ -535,6 +573,52 @@ export function SettingsPage() {
         <div className="mb-3 flex items-center gap-2 rounded-xl bg-info-light px-4 py-3 text-[13px] font-medium text-info">
           <Info className="size-4 shrink-0" />
           Set prices here — 0 means the price isn't set yet.
+        </div>
+        <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] items-end gap-3 rounded-xl border border-border p-4">
+          <div>
+            <Label>Name</Label>
+            <Input value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="e.g. Mint Lemonade" />
+          </div>
+          <div>
+            <Label>Name (Arabic, optional)</Label>
+            <Input dir="rtl" value={newItemNameAr} onChange={(e) => setNewItemNameAr(e.target.value)} placeholder="ليموناضة نعناع" />
+          </div>
+          <div>
+            <Label>Sub / variants (optional)</Label>
+            <Input value={newItemSub} onChange={(e) => setNewItemSub(e.target.value)} placeholder="e.g. Large/Small" />
+          </div>
+          <div>
+            <Label>Category</Label>
+            <Select value={newItemCategoryId} onChange={(e) => setNewItemCategoryId(e.target.value)}>
+              <option value="">Select…</option>
+              {(menuQuery.data ?? []).map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label>Price</Label>
+            <Input type="number" value={newItemPrice} onChange={(e) => setNewItemPrice(e.target.value)} placeholder="0" />
+          </div>
+          <Button
+            variant="primary"
+            onClick={() => {
+              if (!newItemName.trim()) {
+                toast.show('Enter an item name');
+                return;
+              }
+              if (!newItemCategoryId) {
+                toast.show('Select a category');
+                return;
+              }
+              addMenuItem.mutate();
+            }}
+          >
+            <Plus className="size-4" />
+            Add item
+          </Button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

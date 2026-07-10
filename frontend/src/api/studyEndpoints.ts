@@ -30,6 +30,7 @@ export const createBooking = (tableId: string, customerName?: string) =>
 export const updateBooking = (id: string, data: Partial<{ customerName: string }>) =>
   studyApi.put<StudyBookingDto>(`/bookings/${id}`, data).then((r) => r.data);
 export const addDrink = (id: string, menuItemId: string) => studyApi.post<StudyBookingDto>(`/bookings/${id}/drink`, { menuItemId }).then((r) => r.data);
+export const resetTimer = (id: string) => studyApi.post<StudyBookingDto>(`/bookings/${id}/reset-timer`).then((r) => r.data);
 export const completeBooking = (id: string, paymentMethod: 'CASH' | 'CARD') =>
   studyApi.post<StudyBookingDto>(`/bookings/${id}/complete`, { paymentMethod }).then((r) => r.data);
 export const cancelBooking = (id: string) => studyApi.post<StudyBookingDto>(`/bookings/${id}/cancel`).then((r) => r.data);

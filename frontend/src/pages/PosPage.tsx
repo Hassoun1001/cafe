@@ -35,6 +35,7 @@ export function PosPage() {
 
   const order = orderQuery.data;
   const currency = settingsQuery.data?.currency ?? 'SYP';
+  const usdRate = settingsQuery.data?.usdExchangeRate;
 
   // Selling recipe-linked items deducts stock immediately, so anything that
   // can change order items must also refresh Warehouse/Tracker if they're open.
@@ -102,7 +103,7 @@ export function PosPage() {
     onSuccess: (paid) => {
       setCashModalOpen(false);
       setCashReceived('');
-      toast.show(`Table ${paid.table.number} paid — ${money(paid.total, currency)}`, 'success');
+      toast.show(`Table ${paid.table.number} paid — ${money(paid.total, currency, usdRate)}`, 'success');
       setSelectedOrderId(null);
       setSelectedTableId(null);
       qc.invalidateQueries({ queryKey: ['tables'] });
@@ -220,7 +221,7 @@ export function PosPage() {
                     {item.sub && <div className="mt-0.5 text-[11px] leading-snug text-muted-2 line-clamp-2">{item.sub}</div>}
                   </div>
                   {item.price > 0 ? (
-                    <div className="mt-2 text-[13px] font-semibold text-accent-dark">{money(item.price, currency)}</div>
+                    <div className="mt-2 text-[13px] font-semibold text-accent-dark">{money(item.price, currency, usdRate)}</div>
                   ) : (
                     <div className="mt-2 text-xs italic text-muted-2">price TBD</div>
                   )}
@@ -283,7 +284,7 @@ export function PosPage() {
                         <Plus className="size-3.5" />
                       </button>
                     </div>
-                    <span className="min-w-[80px] text-right text-[13px] font-semibold text-ink">{money(line.lineTotal, currency)}</span>
+                    <span className="min-w-[80px] text-right text-[13px] font-semibold text-ink">{money(line.lineTotal, currency, usdRate)}</span>
                   </div>
                 ))}
               </div>
@@ -293,7 +294,7 @@ export function PosPage() {
 
             <div className="flex items-center justify-between py-1.5">
               <span className="text-sm text-muted">Subtotal</span>
-              <span className="text-sm font-semibold text-ink">{money(order?.subtotal ?? 0, currency)}</span>
+              <span className="text-sm font-semibold text-ink">{money(order?.subtotal ?? 0, currency, usdRate)}</span>
             </div>
             <div className="flex items-center justify-between py-1.5">
               <span className="text-sm text-muted">Discount %</span>
@@ -355,7 +356,7 @@ export function PosPage() {
                     <span className="text-sm text-muted">
                       {t.name} ({t.percent}%){t.compound && <span className="text-muted-2"> · on tax above</span>}
                     </span>
-                    <span className="text-sm font-medium text-warning">{money(t.amount, currency)}</span>
+                    <span className="text-sm font-medium text-warning">{money(t.amount, currency, usdRate)}</span>
                   </div>
                 ))}
               </div>
@@ -364,7 +365,7 @@ export function PosPage() {
             <div className="my-4 border-t border-border" />
             <div className="flex items-center justify-between py-1">
               <span className="text-base font-bold text-ink">Total</span>
-              <span className="text-xl font-bold text-accent-dark">{money(order?.total ?? 0, currency)}</span>
+              <span className="text-xl font-bold text-accent-dark">{money(order?.total ?? 0, currency, usdRate)}</span>
             </div>
 
             <Button variant="dark" size="lg" className="mt-4 mb-2 w-full" onClick={handlePrintReceipt}>
@@ -400,11 +401,11 @@ export function PosPage() {
 
       <Modal open={cashModalOpen} onClose={() => setCashModalOpen(false)} title="Cash payment">
         <div className="mb-1 text-xs text-muted">Total due</div>
-        <div className="mb-4 text-3xl font-bold text-accent-dark">{money(order?.total ?? 0, currency)}</div>
+        <div className="mb-4 text-3xl font-bold text-accent-dark">{money(order?.total ?? 0, currency, usdRate)}</div>
         <div className="mb-1.5 text-xs font-medium text-muted">Cash received ({currency})</div>
         <Input type="number" autoFocus placeholder="Enter amount" value={cashReceived} onChange={(e) => setCashReceived(e.target.value)} className="text-lg" />
         <div className={`my-4 rounded-xl py-3 text-center text-2xl font-bold ${change >= 0 ? 'bg-success-light text-success' : 'bg-danger-light text-danger'}`}>
-          {cashReceived === '' ? 'Change: —' : change >= 0 ? `Change: ${money(change, currency)}` : `Still need: ${money(-change, currency)}`}
+          {cashReceived === '' ? 'Change: —' : change >= 0 ? `Change: ${money(change, currency, usdRate)}` : `Still need: ${money(-change, currency, usdRate)}`}
         </div>
         <div className="flex gap-2">
           <Button

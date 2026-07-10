@@ -54,6 +54,13 @@ studyBookingsRouter.post(
 );
 
 studyBookingsRouter.post(
+  '/:id/reset-timer',
+  asyncHandler(async (req, res) => {
+    res.json(await studyService.resetTimer(req.params.id));
+  }),
+);
+
+studyBookingsRouter.post(
   '/:id/complete',
   asyncHandler(async (req, res) => {
     const { paymentMethod } = completeBookingSchema.parse(req.body);

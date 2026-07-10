@@ -57,6 +57,7 @@ export function ReportsPage() {
 
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const currency = settingsQuery.data?.currency ?? 'SYP';
+  const usdRate = settingsQuery.data?.usdExchangeRate;
 
   const summaryQuery = useQuery({
     queryKey: ['reports', 'summary', from, to, groupBy],
@@ -214,11 +215,15 @@ export function ReportsPage() {
       </Card>
 
       <StatGrid>
-        <StatCard label="Revenue" value={`${Math.round((summary?.revenue ?? 0) / 1000)}K`} tone="var(--color-accent-dark)" />
+        <StatCard
+          label="Revenue"
+          value={`${Math.round((summary?.revenue ?? 0) / 1000)}K${usdRate ? ` (≈ $${((summary?.revenue ?? 0) / usdRate).toFixed(0)})` : ''}`}
+          tone="var(--color-accent-dark)"
+        />
         <StatCard label="Orders" value={summary?.orderCount ?? 0} />
-        <StatCard label="Avg order" value={money(summary?.avgOrder ?? 0, currency)} />
-        <StatCard label="Tax collected" value={money(summary?.taxCollected ?? 0, currency)} tone="var(--color-warning)" />
-        <StatCard label="Employee cost" value={money(summary?.employeeCost ?? 0, currency)} tone="var(--color-danger)" />
+        <StatCard label="Avg order" value={money(summary?.avgOrder ?? 0, currency, usdRate)} />
+        <StatCard label="Tax collected" value={money(summary?.taxCollected ?? 0, currency, usdRate)} tone="var(--color-warning)" />
+        <StatCard label="Employee cost" value={money(summary?.employeeCost ?? 0, currency, usdRate)} tone="var(--color-danger)" />
       </StatGrid>
 
       <Card
@@ -246,7 +251,7 @@ export function ReportsPage() {
               <XAxis dataKey="label" fontSize={12} stroke="#94a3b8" axisLine={false} tickLine={false} />
               <YAxis fontSize={12} stroke="#94a3b8" axisLine={false} tickLine={false} width={40} />
               <Tooltip
-                formatter={(v) => money(Number(v), currency)}
+                formatter={(v) => money(Number(v), currency, usdRate)}
                 contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 13 }}
               />
               <Area type="monotone" dataKey="total" stroke="#0d9488" fill="url(#revenueGradient)" strokeWidth={2.5} />
@@ -270,7 +275,7 @@ export function ReportsPage() {
                 <tr key={i.name} className="border-b border-border last:border-b-0">
                   <td className="py-2.5 pr-3 font-medium text-ink">{i.name}</td>
                   <td className="py-2.5 pr-3 text-muted">{i.qty}</td>
-                  <td className="py-2.5 text-ink">{money(i.revenue, currency)}</td>
+                  <td className="py-2.5 text-ink">{money(i.revenue, currency, usdRate)}</td>
                 </tr>
               ))}
             </tbody>
@@ -281,15 +286,15 @@ export function ReportsPage() {
           <div className="mb-4 flex gap-3">
             <div className="flex-1 rounded-xl bg-success-light p-4 text-center">
               <div className="text-xs font-medium text-success">Cash</div>
-              <div className="mt-1 text-lg font-bold text-success">{money(summary?.paymentSplit.cash ?? 0, currency)}</div>
+              <div className="mt-1 text-lg font-bold text-success">{money(summary?.paymentSplit.cash ?? 0, currency, usdRate)}</div>
             </div>
             <div className="flex-1 rounded-xl bg-info-light p-4 text-center">
               <div className="text-xs font-medium text-info">Card</div>
-              <div className="mt-1 text-lg font-bold text-info">{money(summary?.paymentSplit.card ?? 0, currency)}</div>
+              <div className="mt-1 text-lg font-bold text-info">{money(summary?.paymentSplit.card ?? 0, currency, usdRate)}</div>
             </div>
             <div className="flex-1 rounded-xl bg-warning-light p-4 text-center">
               <div className="text-xs font-medium text-warning">Change given</div>
-              <div className="mt-1 text-lg font-bold text-warning">{money(summary?.changeGiven ?? 0, currency)}</div>
+              <div className="mt-1 text-lg font-bold text-warning">{money(summary?.changeGiven ?? 0, currency, usdRate)}</div>
             </div>
           </div>
           {(summary?.lowStock ?? []).length === 0 ? (
@@ -345,9 +350,9 @@ export function ReportsPage() {
                     <td className="py-2.5 pr-3">
                       <Badge tone={o.paymentMethod === 'CASH' ? 'green' : 'blue'}>{o.paymentMethod}</Badge>
                     </td>
-                    <td className="py-2.5 pr-3 text-muted">{o.taxAmount ? money(o.taxAmount, currency) : '—'}</td>
-                    <td className="py-2.5 pr-3 font-semibold text-ink">{money(o.total, currency)}</td>
-                    <td className="py-2.5 pr-3 text-warning">{o.changeGiven ? money(o.changeGiven, currency) : '—'}</td>
+                    <td className="py-2.5 pr-3 text-muted">{o.taxAmount ? money(o.taxAmount, currency, usdRate) : '—'}</td>
+                    <td className="py-2.5 pr-3 font-semibold text-ink">{money(o.total, currency, usdRate)}</td>
+                    <td className="py-2.5 pr-3 text-warning">{o.changeGiven ? money(o.changeGiven, currency, usdRate) : '—'}</td>
                     <td className="py-2.5">
                       <div className="flex gap-1.5">
                         <Button size="sm" variant="secondary" onClick={() => openReceiptPdf(o.id)}>

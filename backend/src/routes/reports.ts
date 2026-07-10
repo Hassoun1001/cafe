@@ -34,13 +34,13 @@ reportsRouter.get(
 
     const doc = createReportDoc('Sales Report', `${formatDateTime(summary.range.from)} to ${formatDateTime(summary.range.to)} - Generated ${formatDateTime(new Date())}`);
     drawStats(doc, [
-      { label: 'Revenue', value: money(summary.revenue, settings.currency) },
+      { label: 'Revenue', value: money(summary.revenue, settings.currency, settings.usdExchangeRate) },
       { label: 'Orders', value: String(summary.orderCount) },
-      { label: 'Avg order', value: money(summary.avgOrder, settings.currency) },
-      { label: 'Tax collected', value: money(summary.taxCollected, settings.currency) },
-      { label: 'Cash', value: money(summary.paymentSplit.cash, settings.currency) },
-      { label: 'Card', value: money(summary.paymentSplit.card, settings.currency) },
-      { label: 'Change given', value: money(summary.changeGiven, settings.currency) },
+      { label: 'Avg order', value: money(summary.avgOrder, settings.currency, settings.usdExchangeRate) },
+      { label: 'Tax collected', value: money(summary.taxCollected, settings.currency, settings.usdExchangeRate) },
+      { label: 'Cash', value: money(summary.paymentSplit.cash, settings.currency, settings.usdExchangeRate) },
+      { label: 'Card', value: money(summary.paymentSplit.card, settings.currency, settings.usdExchangeRate) },
+      { label: 'Change given', value: money(summary.changeGiven, settings.currency, settings.usdExchangeRate) },
     ]);
     drawTable(
       doc,
@@ -78,7 +78,7 @@ reportsRouter.get(
     drawStats(doc, [
       { label: 'Items', value: String(stock.length) },
       { label: 'Low alerts', value: String(stock.filter((s) => s.qty <= s.minQty).length) },
-      { label: 'Stock value', value: money(value, settings.currency) },
+      { label: 'Stock value', value: money(value, settings.currency, settings.usdExchangeRate) },
     ]);
     drawTable(
       doc,
@@ -124,8 +124,8 @@ reportsRouter.get(
     drawStats(
       doc,
       consumption.summary.flatMap((s) => [
-        { label: `${s.name} - Free`, value: money(s.free, settings.currency) },
-        { label: `${s.name} - Deduct`, value: money(s.deduct, settings.currency) },
+        { label: `${s.name} - Free`, value: money(s.free, settings.currency, settings.usdExchangeRate) },
+        { label: `${s.name} - Deduct`, value: money(s.deduct, settings.currency, settings.usdExchangeRate) },
       ]),
     );
     drawTable(

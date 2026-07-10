@@ -4,6 +4,7 @@ export const updateSettingsSchema = z.object({
   receiptName: z.string().min(1).optional(),
   receiptFooter: z.string().optional(),
   currency: z.string().min(1).optional(),
+  usdExchangeRate: z.number().min(0).optional(),
 });
 
 export const discountPresetSchema = z.object({

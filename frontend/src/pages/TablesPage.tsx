@@ -21,6 +21,7 @@ export function TablesPage() {
   const studyTablesQuery = useQuery({ queryKey: ['tables', 'study'], queryFn: () => api.getTables('study'), refetchInterval: 8000 });
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const currency = settingsQuery.data?.currency ?? 'SYP';
+  const usdRate = settingsQuery.data?.usdExchangeRate;
 
   const clearTable = useMutation({
     mutationFn: (orderId: string) => api.clearOrder(orderId),
@@ -82,7 +83,7 @@ export function TablesPage() {
                 <span className={'size-1.5 rounded-full ' + (t.openOrder ? 'bg-warning' : 'bg-slate-300')} />
                 {t.openOrder ? 'Active' : 'Empty'}
               </div>
-              {t.openOrder && <div className="mt-1 text-[13px] font-semibold text-accent-dark">{money(t.openOrder.total, currency)}</div>}
+              {t.openOrder && <div className="mt-1 text-[13px] font-semibold text-accent-dark">{money(t.openOrder.total, currency, usdRate)}</div>}
             </button>
           ))}
           {tables.length === 0 && <EmptyState>No resources yet</EmptyState>}
@@ -104,6 +105,7 @@ export function TablesPage() {
               <TableDetailBody
                 orderId={detailTable.openOrder.id}
                 currency={currency}
+                usdRate={usdRate}
                 onGoToCashier={() => navigate('/pos', { state: { tableId: detailTable.id } })}
                 onClear={() => setConfirmClear(true)}
               />
@@ -128,11 +130,13 @@ export function TablesPage() {
 function TableDetailBody({
   orderId,
   currency,
+  usdRate,
   onGoToCashier,
   onClear,
 }: {
   orderId: string;
   currency: string;
+  usdRate?: number | null;
   onGoToCashier: () => void;
   onClear: () => void;
 }) {
@@ -155,13 +159,13 @@ function TableDetailBody({
             <tr key={i.id} className="border-b border-border last:border-b-0">
               <td className="py-2.5 text-ink">{i.name}</td>
               <td className="py-2.5 text-ink">{i.qty}</td>
-              <td className="py-2.5 font-medium text-ink">{money(i.lineTotal, currency)}</td>
+              <td className="py-2.5 font-medium text-ink">{money(i.lineTotal, currency, usdRate)}</td>
             </tr>
           ))}
         </tbody>
       </table>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-        <span className="text-base font-bold text-ink">Total: {money(order.total, currency)}</span>
+        <span className="text-base font-bold text-ink">Total: {money(order.total, currency, usdRate)}</span>
         <div className="flex gap-2">
           <Button variant="primary" onClick={onGoToCashier}>
             Go to cashier

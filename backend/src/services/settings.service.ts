@@ -9,13 +9,23 @@ export async function getSettings() {
     receiptName: cfg.receiptName,
     receiptFooter: cfg.receiptFooter,
     currency: cfg.currency,
+    usdExchangeRate: toNum(cfg.usdExchangeRate),
   };
 }
 
-export async function updateSettings(data: { receiptName?: string; receiptFooter?: string; currency?: string }) {
+export async function updateSettings(data: { receiptName?: string; receiptFooter?: string; currency?: string; usdExchangeRate?: number }) {
   const cfg = await getAppConfig();
   await prisma.appConfig.update({ where: { id: cfg.id }, data });
   return getSettings();
+}
+
+// SYP per 1 USD, or null if not configured (0 = disabled). Shared with the
+// PDF generators (receipt + report tables) and the Study system's own
+// config response, so there's one authoritative rate for the whole app.
+export async function getUsdExchangeRate(): Promise<number | null> {
+  const cfg = await getAppConfig();
+  const rate = toNum(cfg.usdExchangeRate);
+  return rate > 0 ? rate : null;
 }
 
 function serializeTaxRate(tax: {

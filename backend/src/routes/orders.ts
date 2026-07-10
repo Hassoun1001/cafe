@@ -13,6 +13,7 @@ import {
 import * as ordersService from '../services/orders.service';
 import { buildReceiptPdf } from '../lib/pdf';
 import { getAppConfig } from '../services/config.service';
+import { getUsdExchangeRate } from '../services/settings.service';
 
 export const ordersRouter = Router();
 ordersRouter.use(authenticate);
@@ -114,6 +115,7 @@ ordersRouter.get(
   asyncHandler(async (req, res) => {
     const order = await ordersService.getOrder(req.params.id);
     const cfg = await getAppConfig();
+    const usdExchangeRate = await getUsdExchangeRate();
     const doc = buildReceiptPdf({
       shopName: cfg.receiptName,
       footer: cfg.receiptFooter,
@@ -133,6 +135,7 @@ ordersRouter.get(
       taxes: order.taxes.map((t) => ({ name: t.name, percent: t.percent, amount: t.amount })),
       total: order.total,
       currency: cfg.currency,
+      usdExchangeRate,
     });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="receipt-${order.orderNumber}.pdf"`);

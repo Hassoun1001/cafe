@@ -52,12 +52,18 @@ model User {
 }
 
 // Singleton row (cafe-wide receipt/currency config — auth moved to User).
+// usdExchangeRate is SYP per 1 USD (e.g. 15000) — 0 means "not set", in
+// which case USD-equivalent figures are hidden everywhere rather than
+// shown as a bogus $0. All prices are still entered/stored/charged in SYP;
+// this only drives a computed, display-only USD figure shown alongside
+// every SYP amount across the app and in reports.
 model AppConfig {
-  id            String   @id @default(uuid())
-  receiptName   String   @default("Studio Cafe")
-  receiptFooter String   @default("Thank you! Focus. Connect. Inspire.")
-  currency      String   @default("SYP")
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(uuid())
+  receiptName     String   @default("Studio Cafe")
+  receiptFooter   String   @default("Thank you! Focus. Connect. Inspire.")
+  currency        String   @default("SYP")
+  usdExchangeRate Decimal  @default(0) @db.Decimal(12, 4)
+  updatedAt       DateTime @updatedAt
 }
 
 // A named, independently-toggleable tax. `compound` taxes are calculated on

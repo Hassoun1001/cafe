@@ -116,6 +116,27 @@ export async function updateBooking(id: string, data: { customerName?: string })
   return serializeBooking(updated);
 }
 
+// Restarts the billing clock to right now — for renewing a session after
+// the customer has paid for the current hour, without a full checkout +
+// re-book cycle. Keeps everything else about the booking (customer,
+// drinkCount so far) unchanged. Only valid while still genuinely ACTIVE and
+// not yet room-paid — once the room fee is checked out the clock is frozen
+// and the booking is just waiting on the linked Cafe order, not something
+// to restart.
+export async function resetTimer(id: string) {
+  const existing = await prisma.studyBooking.findUnique({ where: { id } });
+  if (!existing) throw notFound('Booking not found');
+  if (existing.status !== 'ACTIVE') throw badRequest('Booking is not active', 'BOOKING_NOT_ACTIVE');
+  if (existing.paid) throw badRequest('Room/table fee already checked out — this can no longer be reset', 'ALREADY_ROOM_PAID');
+
+  const updated = await prisma.studyBooking.update({
+    where: { id },
+    data: { startTime: new Date() },
+    include: bookingInclude,
+  });
+  return serializeBooking(updated);
+}
+
 // Checkout settles ONLY the room/table fee (computed automatically from
 // actual elapsed time — never entered manually) and freezes the clock. If a
 // drink was ordered, that Cafe order is deliberately left untouched — it

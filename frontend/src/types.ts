@@ -152,6 +152,7 @@ export interface SettingsDto {
   receiptName: string;
   receiptFooter: string;
   currency: string;
+  usdExchangeRate: number;
 }
 
 export interface DiscountPresetDto {
@@ -240,4 +241,6 @@ export interface StudyConfigDto {
   tableHourlyRate: number;
   roomHourlyRate: number;
   currency: string;
+  // Cafe-owned (set in Cafe Settings), read-only here — null if not configured.
+  usdExchangeRate: number | null;
 }
