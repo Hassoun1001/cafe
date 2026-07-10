@@ -51,7 +51,6 @@ export async function deleteTable(id: string) {
     include: {
       orders: { where: { status: 'OPEN' } },
       studyBookings: { where: { status: 'ACTIVE' } },
-      _count: { select: { orders: true } },
     },
   });
   if (!existing) throw notFound('Table not found');
@@ -61,9 +60,10 @@ export async function deleteTable(id: string) {
   // hard-deleted — Order.tableId has no cascade, so the DB would otherwise
   // reject this with a raw foreign-key error. Renaming/deactivating instead
   // preserves the sales record; only a genuinely never-used table can go.
-  if (existing._count.orders > 0) {
+  const allOrders = await prisma.order.findMany({ where: { tableId: id }, select: { id: true, orderNumber: true, status: true } });
+  if (allOrders.length > 0) {
     throw badRequest(
-      `Cannot delete a table with sales history — it has past orders on record (count: ${existing._count.orders}). Rename it instead if it's no longer needed.`,
+      `Cannot delete a table with sales history — it has past orders on record: ${JSON.stringify(allOrders)}. Rename it instead if it's no longer needed.`,
       'TABLE_HAS_ORDER_HISTORY',
     );
   }
