@@ -9,13 +9,18 @@ import { getStudyConfig } from './studyConfig.service';
 // drinks = 180 min free) before the hourly rate starts applying to the
 // remainder. A STUDY_ROOM always bills its full elapsed time regardless of
 // drinks ordered.
+//
+// Billed by whole hour, paid upfront per block — not prorated per minute.
+// Any time into an hour (even 1 minute) bills that full hour, same as an
+// hourly parking/co-working rate. Time still fully covered by free
+// drink-minutes stays free (0 hours billed).
 const FREE_MINUTES_PER_DRINK = 90;
 
 function computeBilling(kind: TableKind, startTime: Date, endTime: Date, hourlyRate: Prisma.Decimal | number, drinkCount: number) {
   const elapsedMinutes = Math.max(0, (endTime.getTime() - startTime.getTime()) / 60000);
   const freeMinutes = kind === 'STUDY_TABLE' ? drinkCount * FREE_MINUTES_PER_DRINK : 0;
   const billableMinutes = Math.max(0, elapsedMinutes - freeMinutes);
-  const hours = round2(billableMinutes / 60);
+  const hours = Math.ceil(billableMinutes / 60);
   const fee = round2(hours * toNum(hourlyRate));
   return { hours, fee };
 }

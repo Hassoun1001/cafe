@@ -171,7 +171,9 @@ export function BoardPage() {
                   : `${formatMinutes(billing.freeMinutes)} free time used`}
               </div>
             )}
-            <div className="mb-3 text-sm font-semibold text-warning">{billing.fee > 0 ? `${money(billing.fee, currency)} so far` : 'Free so far'}</div>
+            <div className="mb-3 text-sm font-semibold text-warning">
+              {billing.hours > 0 ? `${billing.hours} hour${billing.hours > 1 ? 's' : ''} — ${money(billing.fee, currency)}` : 'Free so far'}
+            </div>
             {booking.drinkCount > 0 && (
               <div className="mb-3 flex items-center gap-1 text-xs text-muted">
                 <Coffee className="size-3.5" />
@@ -213,7 +215,7 @@ export function BoardPage() {
     <div>
       <PageHeader
         title="Board"
-        description="9 study tables and 2 rooms — billed automatically by actual time. Tables get 1h30m free per drink; rooms always pay full time."
+        description="9 study tables and 2 rooms — billed by whole hour, paid upfront per hour started. Tables get 1h30m free per drink; rooms always pay full time."
       />
 
       <Card title="Study tables">
@@ -312,6 +314,12 @@ export function BoardPage() {
               <div className="flex justify-between py-1">
                 <span className="text-muted">Billable time</span>
                 <span className="font-semibold text-ink">{formatMinutes(checkoutBilling.billableMinutes)}</span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-muted">Billed hours (rounded up)</span>
+                <span className="font-semibold text-ink">
+                  {checkoutBilling.hours} hour{checkoutBilling.hours !== 1 ? 's' : ''}
+                </span>
               </div>
               <div className="flex justify-between border-t border-border py-1 pt-2">
                 <span className="text-muted">Table/room fee</span>
