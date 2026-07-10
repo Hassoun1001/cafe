@@ -62,7 +62,10 @@ export async function deleteTable(id: string) {
   // reject this with a raw foreign-key error. Renaming/deactivating instead
   // preserves the sales record; only a genuinely never-used table can go.
   if (existing._count.orders > 0) {
-    throw badRequest('Cannot delete a table with sales history — it has past orders on record. Rename it instead if it\'s no longer needed.', 'TABLE_HAS_ORDER_HISTORY');
+    throw badRequest(
+      `Cannot delete a table with sales history — it has past orders on record (count: ${existing._count.orders}). Rename it instead if it's no longer needed.`,
+      'TABLE_HAS_ORDER_HISTORY',
+    );
   }
   await prisma.cafeTable.delete({ where: { id } });
 }
