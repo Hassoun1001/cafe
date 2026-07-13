@@ -4,11 +4,13 @@ import { AlertTriangle, CheckCircle2, Minus, Plus, X } from 'lucide-react';
 import * as api from '../api/endpoints';
 import { useToast } from '../lib/toast';
 import { apiErrorMessage } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { Alert, Badge, Button, Card, Input, Label, PageHeader, Select, StatCard, StatGrid } from '../components/ui';
 
 export function WarehousePage() {
   const qc = useQueryClient();
   const toast = useToast();
+  const { isAdmin } = useAuth();
   const stockQuery = useQuery({ queryKey: ['stock'], queryFn: api.getStock });
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const categoriesQuery = useQuery({ queryKey: ['settings', 'stock-categories'], queryFn: api.getStockCategories });
@@ -236,9 +238,11 @@ export function WarehousePage() {
                             }
                           }}
                         />
-                        <Button size="sm" variant="danger" onClick={() => remove.mutate(s.id)}>
-                          <X className="size-3.5" />
-                        </Button>
+                        {isAdmin && (
+                          <Button size="sm" variant="danger" onClick={() => remove.mutate(s.id)}>
+                            <X className="size-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>

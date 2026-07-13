@@ -25,6 +25,29 @@ export const paySchema = z.object({
   cashReceived: z.number().min(0).optional(),
 });
 
+// A backdated sale entered by hand (e.g. a bill that was actually closed
+// yesterday in a different/legacy system) — full item list, discount, taxes,
+// and payment recorded exactly as if it had gone through the POS on that
+// date. See ordersService.createManualOrder.
+export const manualOrderSchema = z.object({
+  tableId: z.string().uuid(),
+  items: z
+    .array(
+      z.object({
+        menuItemId: z.string().uuid().optional(),
+        name: z.string().trim().min(1),
+        price: z.number().min(0),
+        qty: z.number().int().min(1),
+      }),
+    )
+    .min(1),
+  discountPercent: z.number().min(0).max(100).optional(),
+  taxRateIds: z.array(z.string().uuid()).optional(),
+  paymentMethod: z.enum(['CASH', 'CARD']),
+  cashReceived: z.number().min(0).optional(),
+  closedAt: z.string().min(1),
+});
+
 export const salesHistoryQuerySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),

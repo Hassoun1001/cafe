@@ -192,9 +192,12 @@ export interface RecipeIngredientDto {
   qtyPerUnit: number;
 }
 
+export type UserRole = 'ADMIN' | 'STAFF';
+
 export interface UserDto {
   id: string;
   username: string;
+  role: UserRole;
   active: boolean;
   createdAt: string;
 }

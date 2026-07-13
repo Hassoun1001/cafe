@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requireAdmin } from '../middleware/auth';
 import { createStockSchema, adjustStockSchema, updateStockSchema } from '../schemas/stock.schema';
 import * as stockService from '../services/stock.service';
 
 export const stockRouter = Router();
 stockRouter.use(authenticate);
+// Restocking, renaming, and adjusting quantity are routine day-to-day
+// Warehouse work — open to STAFF. Only permanently removing a stock item
+// (and its history) is admin-only, gated inline below.
 
 stockRouter.get(
   '/',
@@ -47,6 +50,7 @@ stockRouter.patch(
 
 stockRouter.delete(
   '/:id',
+  requireAdmin,
   asyncHandler(async (req, res) => {
     await stockService.deleteStockItem(req.params.id);
     res.status(204).end();

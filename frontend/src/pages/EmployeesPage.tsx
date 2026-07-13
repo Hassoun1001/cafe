@@ -4,6 +4,7 @@ import { Download, Plus, X } from 'lucide-react';
 import * as api from '../api/endpoints';
 import { useToast } from '../lib/toast';
 import { apiErrorMessage } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { exportToExcel, todayFileStamp } from '../lib/excel';
 import { formatDateTime, money } from '../lib/format';
 import { Badge, Button, Card, ConfirmModal, Input, Label, PageHeader, Select, StatGrid } from '../components/ui';
@@ -13,6 +14,7 @@ import type { ConsumptionType } from '../types';
 export function EmployeesPage() {
   const qc = useQueryClient();
   const toast = useToast();
+  const { isAdmin } = useAuth();
   const employeesQuery = useQuery({ queryKey: ['employees'], queryFn: api.getEmployees });
   const consumptionQuery = useQuery({ queryKey: ['employees', 'consumption'], queryFn: api.getConsumption });
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
@@ -181,9 +183,11 @@ export function EmployeesPage() {
                       <Badge tone={l.type === 'FREE' ? 'green' : 'amber'}>{l.type === 'FREE' ? 'Free' : 'Deduct'}</Badge>
                     </td>
                     <td className="py-2.5">
-                      <Button size="sm" variant="danger" onClick={() => setDeleteId(l.id)}>
-                        <X className="size-3.5" />
-                      </Button>
+                      {isAdmin && (
+                        <Button size="sm" variant="danger" onClick={() => setDeleteId(l.id)}>
+                          <X className="size-3.5" />
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))

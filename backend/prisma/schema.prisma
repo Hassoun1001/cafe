@@ -39,11 +39,22 @@ enum AppSystem {
   STUDY
 }
 
+// ADMIN has full access. STAFF can run day-to-day operations (POS, bookings,
+// stock adjustments, etc.) but is blocked from Settings entirely and from
+// hard-deleting historical/financial records (a paid sale, a stock item, a
+// consumption log entry, a study booking correction) — see requireAdmin in
+// middleware/auth.ts for the exact enforcement points.
+enum UserRole {
+  ADMIN
+  STAFF
+}
+
 model User {
   id           String    @id @default(uuid())
   system       AppSystem
   username     String
   passwordHash String
+  role         UserRole  @default(STAFF)
   active       Boolean   @default(true)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

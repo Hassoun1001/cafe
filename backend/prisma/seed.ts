@@ -116,13 +116,28 @@ async function main() {
     console.log('Seeded AppConfig');
   }
 
+  // Roles were introduced after accounts already existed on deployed
+  // instances — the migration defaults every existing User row to STAFF,
+  // which would silently lock real admins out of Settings. If a system has
+  // zero ADMIN accounts, promote every existing account for that system
+  // once (matches "everyone who could log in before had full access,
+  // since roles didn't exist yet"). Runs on every boot but is a no-op once
+  // at least one admin exists, so it only ever fires the one time it's needed.
+  for (const system of ['CAFE', 'STUDY'] as const) {
+    const adminCount = await prisma.user.count({ where: { system, role: 'ADMIN' } });
+    if (adminCount === 0) {
+      const { count } = await prisma.user.updateMany({ where: { system }, data: { role: 'ADMIN' } });
+      if (count > 0) console.log(`Promoted ${count} existing ${system} user(s) to ADMIN (roles just introduced)`);
+    }
+  }
+
   // One default admin account per system — separate logins, same bootstrap
   // password for onboarding convenience. Change both immediately after first login.
   for (const system of ['CAFE', 'STUDY'] as const) {
     const existingAdmin = await prisma.user.findFirst({ where: { system, username: 'admin' } });
     if (!existingAdmin) {
       const passwordHash = await bcrypt.hash(DEFAULT_ADMIN_PASSWORD, 10);
-      await prisma.user.create({ data: { system, username: 'admin', passwordHash } });
+      await prisma.user.create({ data: { system, username: 'admin', passwordHash, role: 'ADMIN' } });
       console.log(`Seeded ${system} admin user (username: admin) — change the bootstrap password immediately`);
     }
   }

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { authenticateStudy } from '../middleware/auth';
+import { authenticateStudy, requireAdmin } from '../middleware/auth';
 import { createBookingSchema, updateBookingSchema, addDrinkSchema, completeBookingSchema } from '../schemas/study.schema';
 import * as studyService from '../services/study.service';
 import * as menuService from '../services/menu.service';
@@ -75,8 +75,12 @@ studyBookingsRouter.post(
   }),
 );
 
+// Hard-delete is the "correction" tool (erases the record entirely), not
+// the normal no-show/left-early path (that's /cancel, above, open to
+// STAFF) — admin-only.
 studyBookingsRouter.delete(
   '/:id',
+  requireAdmin,
   asyncHandler(async (req, res) => {
     await studyService.deleteBooking(req.params.id);
     res.status(204).end();

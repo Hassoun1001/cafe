@@ -1,10 +1,10 @@
 import bcrypt from 'bcryptjs';
-import type { AppSystem } from '@prisma/client';
+import type { AppSystem, UserRole } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { badRequest, notFound } from '../lib/errors';
 
-function serialize(u: { id: string; username: string; active: boolean; createdAt: Date }) {
-  return { id: u.id, username: u.username, active: u.active, createdAt: u.createdAt };
+function serialize(u: { id: string; username: string; role: UserRole; active: boolean; createdAt: Date }) {
+  return { id: u.id, username: u.username, role: u.role, active: u.active, createdAt: u.createdAt };
 }
 
 export async function listUsers(system: AppSystem) {
@@ -12,15 +12,29 @@ export async function listUsers(system: AppSystem) {
   return users.map(serialize);
 }
 
-export async function createUser(system: AppSystem, username: string, password: string) {
+export async function createUser(system: AppSystem, username: string, password: string, role: UserRole = 'STAFF') {
   const passwordHash = await bcrypt.hash(password, 10);
-  const user = await prisma.user.create({ data: { system, username, passwordHash } });
+  const user = await prisma.user.create({ data: { system, username, passwordHash, role } });
   return serialize(user);
 }
 
-export async function updateUser(system: AppSystem, id: string, data: { username?: string; active?: boolean }) {
+// Never allow removing the last active admin's admin status (demoting,
+// deactivating, or deleting) — that would leave nobody able to reach
+// Settings or manage accounts again short of a DB console. Distinct from
+// "last active user" (deleteUser below) since e.g. 1 admin + 3 staff would
+// pass that check while still zeroing out admins.
+async function assertNotLastActiveAdmin(system: AppSystem, userId: string) {
+  const target = await prisma.user.findFirst({ where: { id: userId, system } });
+  if (!target || target.role !== 'ADMIN' || !target.active) return;
+  const otherActiveAdmins = await prisma.user.count({ where: { system, role: 'ADMIN', active: true, id: { not: userId } } });
+  if (otherActiveAdmins === 0) throw badRequest('Cannot remove the last active admin for this system', 'LAST_ADMIN');
+}
+
+export async function updateUser(system: AppSystem, id: string, data: { username?: string; active?: boolean; role?: UserRole }) {
   const existing = await prisma.user.findFirst({ where: { id, system } });
   if (!existing) throw notFound('User not found');
+  const demotingOrDeactivating = (data.role !== undefined && data.role !== 'ADMIN') || data.active === false;
+  if (demotingOrDeactivating) await assertNotLastActiveAdmin(system, id);
   return serialize(await prisma.user.update({ where: { id }, data }));
 }
 
@@ -38,5 +52,6 @@ export async function deleteUser(system: AppSystem, id: string) {
   if (!existing) throw notFound('User not found');
   const remaining = await prisma.user.count({ where: { system, active: true } });
   if (remaining <= 1) throw badRequest('Cannot delete the last active user for this system', 'LAST_USER');
+  await assertNotLastActiveAdmin(system, id);
   await prisma.user.delete({ where: { id } });
 }

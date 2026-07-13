@@ -31,6 +31,22 @@ function StudyProtectedLayout() {
   return <StudyLayout />;
 }
 
+// Settings is admin-only in both systems — this is UI-level convenience
+// (the backend independently rejects every admin-only request regardless),
+// but it keeps a STAFF account from ever landing on a page full of
+// buttons that will just 403.
+function CafeAdminOnly({ children }: { children: React.ReactNode }) {
+  const { isAdmin } = useAuth();
+  if (!isAdmin) return <Navigate to="/pos" replace />;
+  return <>{children}</>;
+}
+
+function StudyAdminOnly({ children }: { children: React.ReactNode }) {
+  const { isAdmin } = useStudyAuth();
+  if (!isAdmin) return <Navigate to="/study/board" replace />;
+  return <>{children}</>;
+}
+
 // The Cafe and Study apps are two independent systems sharing one deploy —
 // separate auth contexts, separate route trees, and neither can
 // authenticate against the other. They share one login page
@@ -92,9 +108,11 @@ function CafeApp() {
         <Route
           path="settings"
           element={
-            <Suspense fallback={<Spinner />}>
-              <SettingsPage />
-            </Suspense>
+            <CafeAdminOnly>
+              <Suspense fallback={<Spinner />}>
+                <SettingsPage />
+              </Suspense>
+            </CafeAdminOnly>
           }
         />
       </Route>
@@ -127,9 +145,11 @@ function StudyApp() {
         <Route
           path="settings"
           element={
-            <Suspense fallback={<Spinner />}>
-              <StudySettingsPage />
-            </Suspense>
+            <StudyAdminOnly>
+              <Suspense fallback={<Spinner />}>
+                <StudySettingsPage />
+              </Suspense>
+            </StudyAdminOnly>
           }
         />
       </Route>

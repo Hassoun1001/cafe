@@ -8,6 +8,7 @@ import {
   patchOrderSchema,
   orderTaxSchema,
   paySchema,
+  manualOrderSchema,
   salesHistoryQuerySchema,
 } from '../schemas/orders.schema';
 import * as ordersService from '../services/orders.service';
@@ -38,6 +39,18 @@ ordersRouter.post(
   asyncHandler(async (req, res) => {
     const { tableId } = openOrderSchema.parse(req.body);
     res.status(201).json(await ordersService.openOrderForTable(tableId));
+  }),
+);
+
+// Manual/backdated historical entry — a routine staff task (recording a bill
+// that closed elsewhere/earlier), not a destructive or settings action, so
+// any authenticated user can use it. Deleting an already-recorded sale is a
+// separate, still admin-only action (see DELETE /:id below).
+ordersRouter.post(
+  '/manual',
+  asyncHandler(async (req, res) => {
+    const data = manualOrderSchema.parse(req.body);
+    res.status(201).json(await ordersService.createManualOrder(data));
   }),
 );
 
@@ -105,7 +118,7 @@ ordersRouter.post(
 ordersRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
-    await ordersService.deleteOrder(req.params.id);
+    await ordersService.deleteOrder(req.params.id, req.user?.role);
     res.status(204).end();
   }),
 );

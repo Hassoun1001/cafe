@@ -20,13 +20,13 @@ const NAV = [
   { to: '/tracker', label: 'Tracker', icon: ClipboardCheck },
   { to: '/employees', label: 'Employees', icon: Users },
   { to: '/reports', label: 'Reports', icon: LineChart },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon, adminOnly: true },
 ];
 
-function NavItems({ onNavigate }: { onNavigate?: () => void }) {
+function NavItems({ onNavigate, isAdmin }: { onNavigate?: () => void; isAdmin: boolean }) {
   return (
     <>
-      {NAV.map((item) => (
+      {NAV.filter((item) => !item.adminOnly || isAdmin).map((item) => (
         <NavLink
           key={item.to}
           to={item.to}
@@ -47,7 +47,7 @@ function NavItems({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export function Layout() {
-  const { logout } = useAuth();
+  const { logout, isAdmin } = useAuth();
 
   return (
     <div className="min-h-screen lg:flex">
@@ -63,7 +63,7 @@ export function Layout() {
           </div>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 px-3">
-          <NavItems />
+          <NavItems isAdmin={isAdmin} />
         </nav>
         <div className="border-t border-border p-3">
           <button
@@ -91,7 +91,7 @@ export function Layout() {
           </button>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-2.5">
-          {NAV.map((item) => (
+          {NAV.filter((item) => !item.adminOnly || isAdmin).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

@@ -6,6 +6,7 @@ import { useToast } from '../../lib/toast';
 import { apiErrorMessage } from '../../lib/api';
 import { money } from '../../lib/format';
 import { computeLiveBilling, formatMinutes } from '../../lib/studyBilling';
+import { useStudyAuth } from '../../lib/studyAuth';
 import { Alert, Badge, Button, Card, ConfirmModal, Input, Label, Modal, PageHeader, Pill } from '../../components/ui';
 import type { StudyBookingDto, StudyResourceDto, TableKind } from '../../types';
 
@@ -25,6 +26,7 @@ function resourceKindLabel(kind: TableKind) {
 export function BoardPage() {
   const qc = useQueryClient();
   const toast = useToast();
+  const { isAdmin } = useStudyAuth();
   const now = useNow();
 
   const resourcesQuery = useQuery({ queryKey: ['study', 'resources'], queryFn: api.getResources, refetchInterval: 8000 });
@@ -170,10 +172,12 @@ export function BoardPage() {
               <Coffee className="size-3.5" />
               Waiting on {booking.drinkCount} drink{booking.drinkCount > 1 ? 's' : ''} — pay in Cafe → Tables → Study tab
             </div>
-            <Button size="sm" variant="danger" className="w-full" onClick={() => setDeleteBookingId(booking.id)}>
-              <Trash2 className="size-3.5" />
-              Remove (correction)
-            </Button>
+            {isAdmin && (
+              <Button size="sm" variant="danger" className="w-full" onClick={() => setDeleteBookingId(booking.id)}>
+                <Trash2 className="size-3.5" />
+                Remove (correction)
+              </Button>
+            )}
           </>
         ) : booking && billing ? (
           <>
@@ -210,9 +214,11 @@ export function BoardPage() {
               <Button size="sm" variant="secondary" onClick={() => setCancelBookingId(booking.id)}>
                 <Ban className="size-3.5" />
               </Button>
-              <Button size="sm" variant="danger" onClick={() => setDeleteBookingId(booking.id)}>
-                <Trash2 className="size-3.5" />
-              </Button>
+              {isAdmin && (
+                <Button size="sm" variant="danger" onClick={() => setDeleteBookingId(booking.id)}>
+                  <Trash2 className="size-3.5" />
+                </Button>
+              )}
             </div>
           </>
         ) : (

@@ -1,5 +1,5 @@
 import { studyApi } from '../lib/studyApi';
-import type { MenuCategoryDto, StudyBookingDto, StudyBookingStatus, StudyConfigDto, StudyResourceDto, UserDto } from '../types';
+import type { MenuCategoryDto, StudyBookingDto, StudyBookingStatus, StudyConfigDto, StudyResourceDto, UserDto, UserRole } from '../types';
 
 // Auth
 export const login = (username: string, password: string) => studyApi.post<{ token: string }>('/auth/login', { username, password }).then((r) => r.data);
@@ -8,8 +8,9 @@ export const changePassword = (currentPassword: string, newPassword: string) =>
 
 // Users
 export const getUsers = () => studyApi.get<UserDto[]>('/users').then((r) => r.data);
-export const createUser = (username: string, password: string) => studyApi.post<UserDto>('/users', { username, password }).then((r) => r.data);
-export const updateUser = (id: string, data: Partial<{ username: string; active: boolean }>) =>
+export const createUser = (username: string, password: string, role: UserRole = 'STAFF') =>
+  studyApi.post<UserDto>('/users', { username, password, role }).then((r) => r.data);
+export const updateUser = (id: string, data: Partial<{ username: string; active: boolean; role: UserRole }>) =>
   studyApi.put<UserDto>(`/users/${id}`, data).then((r) => r.data);
 export const resetUserPassword = (id: string, newPassword: string) => studyApi.post(`/users/${id}/reset-password`, { newPassword }).then((r) => r.data);
 export const deleteUser = (id: string) => studyApi.delete(`/users/${id}`);

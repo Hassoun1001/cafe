@@ -1,14 +1,16 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, Printer, X } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, Plus, Printer, X } from 'lucide-react';
 import * as api from '../api/endpoints';
 import { useToast } from '../lib/toast';
 import { apiErrorMessage } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { exportToExcel, todayFileStamp } from '../lib/excel';
 import { formatDateTime, money } from '../lib/format';
 import { openEmployeesReportPdf, openReceiptPdf, openSalesReportPdf, openStockReportPdf } from '../lib/receipt';
 import { Button, Badge, Card, ConfirmModal, Input, Label, PageHeader, Pill, StatCard, StatGrid } from '../components/ui';
+import { ManualSaleModal } from '../components/ManualSaleModal';
 import type { ReportGroupBy } from '../types';
 
 function toDateStr(d: Date): string {
@@ -48,12 +50,14 @@ const QUICK_RANGES: { label: string; range: () => { from: string; to: string } }
 export function ReportsPage() {
   const qc = useQueryClient();
   const toast = useToast();
+  const { isAdmin } = useAuth();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [groupBy, setGroupBy] = useState<ReportGroupBy>('day');
   const [activeQuickRange, setActiveQuickRange] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
+  const [manualSaleOpen, setManualSaleOpen] = useState(false);
 
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const currency = settingsQuery.data?.currency ?? 'SYP';
@@ -315,7 +319,15 @@ export function ReportsPage() {
         </Card>
       </div>
 
-      <Card title="Sales history">
+      <Card
+        title="Sales history"
+        action={
+          <Button size="sm" variant="secondary" onClick={() => setManualSaleOpen(true)}>
+            <Plus className="size-3.5" />
+            Add historical sale
+          </Button>
+        }
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -358,9 +370,11 @@ export function ReportsPage() {
                         <Button size="sm" variant="secondary" onClick={() => openReceiptPdf(o.id)}>
                           <Printer className="size-3.5" />
                         </Button>
-                        <Button size="sm" variant="danger" onClick={() => setDeleteOrderId(o.id)}>
-                          <X className="size-3.5" />
-                        </Button>
+                        {isAdmin && (
+                          <Button size="sm" variant="danger" onClick={() => setDeleteOrderId(o.id)}>
+                            <X className="size-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -395,6 +409,8 @@ export function ReportsPage() {
         confirmLabel="Delete"
         danger
       />
+
+      <ManualSaleModal open={manualSaleOpen} onClose={() => setManualSaleOpen(false)} />
     </div>
   );
 }

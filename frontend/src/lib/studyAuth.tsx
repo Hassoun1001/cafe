@@ -1,8 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { STUDY_TOKEN_KEY, setStudyUnauthorizedHandler } from './studyApi';
+import { decodeJwt } from './decodeJwt';
 
 interface StudyAuthContextValue {
   isAuthenticated: boolean;
+  isAdmin: boolean;
+  username: string | null;
   login: (token: string) => void;
   logout: () => void;
 }
@@ -26,7 +29,16 @@ export function StudyAuthProvider({ children }: { children: ReactNode }) {
     setStudyUnauthorizedHandler(logout);
   }, [logout]);
 
-  const value = useMemo(() => ({ isAuthenticated: !!token, login, logout }), [token, login, logout]);
+  const value = useMemo(() => {
+    const payload = decodeJwt<{ role?: string; username?: string }>(token);
+    return {
+      isAuthenticated: !!token,
+      isAdmin: payload?.role === 'ADMIN',
+      username: payload?.username ?? null,
+      login,
+      logout,
+    };
+  }, [token, login, logout]);
 
   return <StudyAuthContext.Provider value={value}>{children}</StudyAuthContext.Provider>;
 }

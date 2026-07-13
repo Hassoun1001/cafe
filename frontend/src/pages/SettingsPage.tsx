@@ -8,7 +8,7 @@ import { useAuth } from '../lib/auth';
 import { money } from '../lib/format';
 import { Badge, Button, Card, ConfirmModal, Input, Label, Modal, PageHeader, Select } from '../components/ui';
 import { RecipeEditorModal } from '../components/RecipeEditorModal';
-import type { ImportResultDto, MenuItemDto } from '../types';
+import type { ImportResultDto, MenuItemDto, UserRole } from '../types';
 
 export function SettingsPage() {
   const qc = useQueryClient();
@@ -41,21 +41,28 @@ export function SettingsPage() {
   // --- team access (cafe user accounts) ---
   const [newUsername, setNewUsername] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserRole, setNewUserRole] = useState<UserRole>('STAFF');
   const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null);
   const [resetPasswordValue, setResetPasswordValue] = useState('');
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
   const createUserMutation = useMutation({
-    mutationFn: () => api.createUser(newUsername.trim(), newUserPassword),
+    mutationFn: () => api.createUser(newUsername.trim(), newUserPassword, newUserRole),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] });
       setNewUsername('');
       setNewUserPassword('');
+      setNewUserRole('STAFF');
       toast.show('User added', 'success');
     },
     onError: (e) => toast.show(apiErrorMessage(e), 'error'),
   });
   const toggleUserActive = useMutation({
     mutationFn: (vars: { id: string; active: boolean }) => api.updateUser(vars.id, { active: vars.active }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+    onError: (e) => toast.show(apiErrorMessage(e), 'error'),
+  });
+  const changeUserRole = useMutation({
+    mutationFn: (vars: { id: string; role: UserRole }) => api.updateUser(vars.id, { role: vars.role }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
     onError: (e) => toast.show(apiErrorMessage(e), 'error'),
   });
@@ -882,6 +889,13 @@ export function SettingsPage() {
             <Label>Password</Label>
             <Input type="password" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} placeholder="min 6 characters" />
           </div>
+          <div className="min-w-[120px]">
+            <Label>Role</Label>
+            <Select value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as UserRole)}>
+              <option value="STAFF">Staff</option>
+              <option value="ADMIN">Admin</option>
+            </Select>
+          </div>
           <Button
             variant="primary"
             onClick={() => {
@@ -901,9 +915,18 @@ export function SettingsPage() {
             <div key={u.id} className="flex items-center justify-between border-b border-border py-2.5 last:border-b-0">
               <span className="flex items-center gap-2 text-sm font-medium text-ink">
                 {u.username}
+                <Badge tone={u.role === 'ADMIN' ? 'amber' : 'gray'}>{u.role === 'ADMIN' ? 'Admin' : 'Staff'}</Badge>
                 <Badge tone={u.active ? 'green' : 'gray'}>{u.active ? 'Active' : 'Disabled'}</Badge>
               </span>
-              <div className="flex gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <Select
+                  className="w-auto py-1.5 text-xs"
+                  value={u.role}
+                  onChange={(e) => changeUserRole.mutate({ id: u.id, role: e.target.value as UserRole })}
+                >
+                  <option value="STAFF">Staff</option>
+                  <option value="ADMIN">Admin</option>
+                </Select>
                 <Button size="sm" variant="secondary" onClick={() => toggleUserActive.mutate({ id: u.id, active: !u.active })}>
                   {u.active ? 'Disable' : 'Enable'}
                 </Button>

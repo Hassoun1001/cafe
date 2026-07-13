@@ -1,7 +1,7 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { toNum, round2 } from '../lib/decimal';
-import { badRequest, notFound } from '../lib/errors';
+import { badRequest, forbidden, notFound } from '../lib/errors';
 import { endOfDayExclusive } from '../lib/dates';
 import { applyStockForMenuItemSale } from './stock.service';
 
@@ -321,8 +321,14 @@ export async function payOrder(orderId: string, method: 'CASH' | 'CARD', cashRec
 // Open orders are soft-cancelled (kept for audit) after restoring any stock
 // already deducted for their lines; paid orders are hard-deleted from history,
 // matching the prototype's "delete sale" report action (stock already sold is
-// not restored when voiding a historical sale).
-export async function deleteOrder(orderId: string) {
+// not restored when voiding a historical sale). Voiding an OPEN order is a
+// routine staff task ("Clear table" — order was a mistake, customer walked
+// out); hard-deleting a PAID order erases real sales history, so that branch
+// requires the caller's role to be ADMIN. `role` is only checked when it's
+// actually needed (the hard-delete branch) — internal callers (Study
+// booking cancel/delete) only ever hit the OPEN branch, so they don't need
+// to pass one.
+export async function deleteOrder(orderId: string, role?: UserRole) {
   const order = await findOrderOrThrow(orderId);
   if (order.status === 'OPEN') {
     await prisma.$transaction(async (tx) => {
@@ -334,7 +340,86 @@ export async function deleteOrder(orderId: string) {
     await completeLinkedStudyBookingIfReady(orderId);
     return;
   }
+  if (role !== 'ADMIN') throw forbidden('Only an admin account can delete a historical sale', 'ADMIN_REQUIRED');
   await prisma.order.delete({ where: { id: orderId } });
+}
+
+// Records a sale that actually happened at some point in the past (e.g. a
+// bill closed yesterday in a different/legacy system) with its real item
+// list, discount, and taxes, backdated to that time — an admin-only Reports
+// page tool, not a POS flow. Deliberately skips stock deduction, same as the
+// Excel ledger importer (importLedgerFile): the physical stock was already
+// consumed and reconciled whenever the sale actually happened, so deducting
+// it again now would double-count. Reuses recomputeTotals for the actual
+// subtotal/discount/tax/total math so a manual entry is calculated exactly
+// the same way a live POS sale would be, instead of a second parallel
+// implementation that could drift out of sync.
+export async function createManualOrder(input: {
+  tableId: string;
+  items: { menuItemId?: string; name: string; price: number; qty: number }[];
+  discountPercent?: number;
+  taxRateIds?: string[];
+  paymentMethod: 'CASH' | 'CARD';
+  cashReceived?: number;
+  closedAt: string;
+}) {
+  const table = await prisma.cafeTable.findUnique({ where: { id: input.tableId } });
+  if (!table) throw notFound('Table not found');
+
+  const closedAt = new Date(input.closedAt);
+  if (Number.isNaN(closedAt.getTime())) throw badRequest('Invalid date/time', 'INVALID_DATE');
+
+  const taxRates = input.taxRateIds?.length ? await prisma.taxRate.findMany({ where: { id: { in: input.taxRateIds } } }) : [];
+
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.order.create({
+      data: {
+        tableId: input.tableId,
+        discountPercent: input.discountPercent ?? 0,
+        openedAt: closedAt,
+        items: {
+          create: input.items.map((i) => ({
+            menuItemId: i.menuItemId ?? null,
+            nameSnapshot: i.name,
+            priceSnapshot: i.price,
+            qty: i.qty,
+          })),
+        },
+        taxes: taxRates.length
+          ? {
+              create: taxRates.map((t) => ({
+                taxRateId: t.id,
+                name: t.name,
+                percent: t.percent,
+                compound: t.compound,
+                sortOrder: t.sortOrder,
+              })),
+            }
+          : undefined,
+      },
+    });
+    await recomputeTotals(created.id, tx);
+
+    const withTotals = await tx.order.findUniqueOrThrow({ where: { id: created.id } });
+    const total = toNum(withTotals.total);
+    if (input.paymentMethod === 'CASH' && (input.cashReceived === undefined || input.cashReceived < total)) {
+      throw badRequest('Cash received is less than the total due', 'INSUFFICIENT_CASH');
+    }
+    const changeGiven = input.paymentMethod === 'CASH' ? round2((input.cashReceived as number) - total) : null;
+
+    const paid = await tx.order.update({
+      where: { id: created.id },
+      data: {
+        status: 'PAID',
+        paymentMethod: input.paymentMethod,
+        cashReceived: input.paymentMethod === 'CASH' ? input.cashReceived : null,
+        changeGiven,
+        closedAt,
+      },
+      include: orderInclude,
+    });
+    return serializeOrder(paid);
+  });
 }
 
 export async function listSalesHistory(filters: {

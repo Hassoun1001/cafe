@@ -1,15 +1,16 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
-import type { AppSystem } from '@prisma/client';
+import type { AppSystem, UserRole } from '@prisma/client';
 
 export interface SessionPayload {
   sub: string;
   username: string;
   system: AppSystem;
+  role: UserRole;
 }
 
-export function signSessionToken(user: { id: string; username: string; system: AppSystem }): string {
-  return jwt.sign({ sub: user.id, username: user.username, system: user.system }, config.jwtSecret, {
+export function signSessionToken(user: { id: string; username: string; system: AppSystem; role: UserRole }): string {
+  return jwt.sign({ sub: user.id, username: user.username, system: user.system, role: user.role }, config.jwtSecret, {
     expiresIn: config.jwtExpiresIn,
   } as jwt.SignOptions);
 }

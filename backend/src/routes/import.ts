@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requireAdmin } from '../middleware/auth';
 import { badRequest } from '../lib/errors';
 import * as importService from '../services/import.service';
 
 export const importRouter = Router();
-importRouter.use(authenticate);
+importRouter.use(authenticate, requireAdmin);
 
 // Kept small and memory-only — this is an occasional admin action (a
 // handful of daily ledger exports), not a general file-storage feature.

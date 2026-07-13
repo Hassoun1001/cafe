@@ -1,8 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { TOKEN_KEY, setUnauthorizedHandler } from './api';
+import { decodeJwt } from './decodeJwt';
 
 interface AuthContextValue {
   isAuthenticated: boolean;
+  isAdmin: boolean;
+  username: string | null;
   login: (token: string) => void;
   logout: () => void;
 }
@@ -26,7 +29,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUnauthorizedHandler(logout);
   }, [logout]);
 
-  const value = useMemo(() => ({ isAuthenticated: !!token, login, logout }), [token, login, logout]);
+  const value = useMemo(() => {
+    const payload = decodeJwt<{ role?: string; username?: string }>(token);
+    return {
+      isAuthenticated: !!token,
+      isAdmin: payload?.role === 'ADMIN',
+      username: payload?.username ?? null,
+      login,
+      logout,
+    };
+  }, [token, login, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

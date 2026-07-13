@@ -18,6 +18,7 @@ import type {
   TrackerHistoryDto,
   TrackerRowDto,
   UserDto,
+  UserRole,
   ImportResultDto,
 } from '../types';
 
@@ -28,8 +29,9 @@ export const changePassword = (currentPassword: string, newPassword: string) =>
 
 // Users (Cafe system accounts)
 export const getUsers = () => api.get<UserDto[]>('/users').then((r) => r.data);
-export const createUser = (username: string, password: string) => api.post<UserDto>('/users', { username, password }).then((r) => r.data);
-export const updateUser = (id: string, data: Partial<{ username: string; active: boolean }>) =>
+export const createUser = (username: string, password: string, role: UserRole = 'STAFF') =>
+  api.post<UserDto>('/users', { username, password, role }).then((r) => r.data);
+export const updateUser = (id: string, data: Partial<{ username: string; active: boolean; role: UserRole }>) =>
   api.put<UserDto>(`/users/${id}`, data).then((r) => r.data);
 export const resetUserPassword = (id: string, newPassword: string) => api.post(`/users/${id}/reset-password`, { newPassword }).then((r) => r.data);
 export const deleteUser = (id: string) => api.delete(`/users/${id}`);
@@ -85,6 +87,15 @@ export const removeOrderTax = (orderId: string, taxRateId: string) =>
 export const payOrder = (orderId: string, method: 'CASH' | 'CARD', cashReceived?: number) =>
   api.post<OrderDto>(`/orders/${orderId}/pay`, { method, cashReceived }).then((r) => r.data);
 export const clearOrder = (orderId: string) => api.delete(`/orders/${orderId}`);
+export const createManualOrder = (data: {
+  tableId: string;
+  items: { menuItemId?: string; name: string; price: number; qty: number }[];
+  discountPercent?: number;
+  taxRateIds?: string[];
+  paymentMethod: 'CASH' | 'CARD';
+  cashReceived?: number;
+  closedAt: string;
+}) => api.post<OrderDto>('/orders/manual', data).then((r) => r.data);
 export const getSalesHistory = (params: {
   from?: string;
   to?: string;

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requireAdmin } from '../middleware/auth';
 import { createEmployeeSchema, updateEmployeeSchema, logConsumptionSchema } from '../schemas/employees.schema';
 import * as employeesService from '../services/employees.service';
 
@@ -14,8 +14,13 @@ employeesRouter.get(
   }),
 );
 
+// Adding/editing/removing an employee record is only ever done from
+// Settings — admin-only. Logging consumption (POST /consumption) is the
+// Employees page's whole normal purpose, open to STAFF; deleting a logged
+// entry (an audit/financial record) is admin-only.
 employeesRouter.post(
   '/',
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const data = createEmployeeSchema.parse(req.body);
     res.status(201).json(await employeesService.createEmployee(data));
@@ -24,6 +29,7 @@ employeesRouter.post(
 
 employeesRouter.put(
   '/:id',
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const data = updateEmployeeSchema.parse(req.body);
     res.json(await employeesService.updateEmployee(req.params.id, data));
@@ -32,6 +38,7 @@ employeesRouter.put(
 
 employeesRouter.delete(
   '/:id',
+  requireAdmin,
   asyncHandler(async (req, res) => {
     await employeesService.deleteEmployee(req.params.id);
     res.status(204).end();
@@ -55,6 +62,7 @@ employeesRouter.post(
 
 employeesRouter.delete(
   '/consumption/:id',
+  requireAdmin,
   asyncHandler(async (req, res) => {
     await employeesService.deleteConsumption(req.params.id);
     res.status(204).end();

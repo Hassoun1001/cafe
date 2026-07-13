@@ -1,14 +1,17 @@
 import { Router, RequestHandler } from 'express';
 import type { AppSystem } from '@prisma/client';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { requireAdmin } from '../middleware/auth';
 import { createUserSchema, updateUserSchema, resetPasswordSchema } from '../schemas/users.schema';
 import * as usersService from '../services/users.service';
 
-// Admin account management, scoped to one system — used both by Cafe
-// Settings and Study Settings to manage that app's own username+password logins.
+// Account management, scoped to one system — used both by Cafe Settings and
+// Study Settings to manage that app's own username+password logins. Entirely
+// admin-only: managing other people's accounts (and their role) lives inside
+// Settings, which STAFF can't reach at all.
 export function createUsersRouter(system: AppSystem, authenticate: RequestHandler) {
   const router = Router();
-  router.use(authenticate);
+  router.use(authenticate, requireAdmin);
 
   router.get(
     '/',
@@ -20,8 +23,8 @@ export function createUsersRouter(system: AppSystem, authenticate: RequestHandle
   router.post(
     '/',
     asyncHandler(async (req, res) => {
-      const { username, password } = createUserSchema.parse(req.body);
-      res.status(201).json(await usersService.createUser(system, username, password));
+      const { username, password, role } = createUserSchema.parse(req.body);
+      res.status(201).json(await usersService.createUser(system, username, password, role));
     }),
   );
 
