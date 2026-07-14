@@ -85,6 +85,13 @@ export function PosPage() {
     onError: (e) => toast.show(apiErrorMessage(e), 'error'),
   });
 
+  const setTaxManualAmount = useMutation({
+    mutationFn: (vars: { taxRateId: string; manualAmount: number | null }) =>
+      api.setOrderTaxManualAmount(order!.id, vars.taxRateId, vars.manualAmount),
+    onSuccess: setOrderCache,
+    onError: (e) => toast.show(apiErrorMessage(e), 'error'),
+  });
+
   const clearOrder = useMutation({
     mutationFn: () => api.clearOrder(order!.id),
     onSuccess: () => {
@@ -352,11 +359,34 @@ export function PosPage() {
             {order && order.taxes.length > 0 && (
               <div className="mt-1">
                 {order.taxes.map((t) => (
-                  <div key={t.taxRateId} className="flex items-center justify-between py-1">
+                  <div key={t.taxRateId} className="flex items-center justify-between gap-2 py-1">
                     <span className="text-sm text-muted">
                       {t.name} ({t.percent}%){t.compound && <span className="text-muted-2"> · on tax above</span>}
                     </span>
-                    <span className="text-sm font-medium text-warning">{money(t.amount, currency, usdRate)}</span>
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        type="number"
+                        min={0}
+                        step="any"
+                        value={t.amount}
+                        onChange={(e) => {
+                          if (!t.taxRateId) return;
+                          const v = parseFloat(e.target.value);
+                          setTaxManualAmount.mutate({ taxRateId: t.taxRateId, manualAmount: Number.isFinite(v) ? v : 0 });
+                        }}
+                        className="w-[92px] py-1 text-right text-sm font-medium text-warning"
+                      />
+                      {t.manualAmount !== null && t.taxRateId && (
+                        <button
+                          type="button"
+                          title="Back to auto (% of bill)"
+                          onClick={() => setTaxManualAmount.mutate({ taxRateId: t.taxRateId as string, manualAmount: null })}
+                          className="text-[11px] font-medium text-accent hover:underline"
+                        >
+                          Auto
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

@@ -42,6 +42,9 @@ export function ManualSaleModal({ open, onClose }: { open: boolean; onClose: () 
   const [rows, setRows] = useState<Row[]>([{ ...emptyRow }]);
   const [discountPercent, setDiscountPercent] = useState('0');
   const [taxIds, setTaxIds] = useState<string[]>([]);
+  // Per-tax typed-in override — empty string means "auto (% of bill)", same
+  // toggle as the POS cashier screen. Keyed by taxRateId.
+  const [manualTaxAmounts, setManualTaxAmounts] = useState<Record<string, string>>({});
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD'>('CASH');
   const [cashReceived, setCashReceived] = useState('');
   const [closedAt, setClosedAt] = useState(nowLocalDateTime());
@@ -55,6 +58,7 @@ export function ManualSaleModal({ open, onClose }: { open: boolean; onClose: () 
     setRows([{ ...emptyRow }]);
     setDiscountPercent('0');
     setTaxIds([]);
+    setManualTaxAmounts({});
     setPaymentMethod('CASH');
     setCashReceived('');
     setClosedAt(nowLocalDateTime());
@@ -72,21 +76,30 @@ export function ManualSaleModal({ open, onClose }: { open: boolean; onClose: () 
 
   // Client-side preview only — the backend independently recomputes the real
   // totals the same way (recomputeTotals), this just lets the user see the
-  // numbers before submitting.
+  // numbers before submitting. Each selected tax uses its typed-in manual
+  // amount if one was entered, otherwise falls back to percent × base, and
+  // a compound tax's base is whatever amount (manual or calculated) the
+  // previous tax in the list landed on — same rule the backend applies.
   const preview = useMemo(() => {
     const subtotal = rows.reduce((s, r) => s + (parseFloat(r.price) || 0) * (parseInt(r.qty, 10) || 0), 0);
     const discAmt = subtotal * ((parseFloat(discountPercent) || 0) / 100);
     const afterDiscount = subtotal - discAmt;
     let previousTaxAmount: number | null = null;
     let taxTotal = 0;
-    for (const rate of taxRates.filter((t) => taxIds.includes(t.id))) {
-      const base: number = rate.compound && previousTaxAmount !== null ? previousTaxAmount : afterDiscount;
-      const amount: number = base * (rate.percent / 100);
-      taxTotal += amount;
-      previousTaxAmount = amount;
-    }
-    return { subtotal, discAmt, taxTotal, total: afterDiscount + taxTotal };
-  }, [rows, discountPercent, taxIds, taxRates]);
+    const taxRows = taxRates
+      .filter((t) => taxIds.includes(t.id))
+      .map((rate) => {
+        const manual = manualTaxAmounts[rate.id];
+        const isManual = manual !== undefined && manual !== '';
+        const amount: number = isManual
+          ? parseFloat(manual) || 0
+          : (rate.compound && previousTaxAmount !== null ? previousTaxAmount : afterDiscount) * (rate.percent / 100);
+        taxTotal += amount;
+        previousTaxAmount = amount;
+        return { rate, amount, isManual };
+      });
+    return { subtotal, discAmt, taxTotal, total: afterDiscount + taxTotal, taxRows };
+  }, [rows, discountPercent, taxIds, manualTaxAmounts, taxRates]);
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -101,7 +114,10 @@ export function ManualSaleModal({ open, onClose }: { open: boolean; onClose: () 
             qty: parseInt(r.qty, 10) || 1,
           })),
         discountPercent: parseFloat(discountPercent) || 0,
-        taxRateIds: taxIds,
+        taxes: taxIds.map((id) => ({
+          taxRateId: id,
+          manualAmount: manualTaxAmounts[id] !== undefined && manualTaxAmounts[id] !== '' ? parseFloat(manualTaxAmounts[id]) || 0 : null,
+        })),
         paymentMethod,
         cashReceived: paymentMethod === 'CASH' ? parseFloat(cashReceived) || 0 : undefined,
         closedAt: new Date(closedAt).toISOString(),
@@ -231,7 +247,18 @@ export function ManualSaleModal({ open, onClose }: { open: boolean; onClose: () 
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setTaxIds((prev) => (prev.includes(t.id) ? prev.filter((id) => id !== t.id) : [...prev, t.id]))}
+                onClick={() =>
+                  setTaxIds((prev) => {
+                    if (prev.includes(t.id)) {
+                      setManualTaxAmounts((m) => {
+                        const { [t.id]: _removed, ...rest } = m;
+                        return rest;
+                      });
+                      return prev.filter((id) => id !== t.id);
+                    }
+                    return [...prev, t.id];
+                  })
+                }
                 className={
                   'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ' +
                   (taxIds.includes(t.id) ? 'border-accent bg-accent-light text-accent-dark' : 'border-border text-muted hover:bg-bg')
@@ -241,6 +268,38 @@ export function ManualSaleModal({ open, onClose }: { open: boolean; onClose: () 
               </button>
             ))}
           </div>
+          {preview.taxRows.length > 0 && (
+            <div className="mt-2">
+              {preview.taxRows.map(({ rate, amount, isManual }) => (
+                <div key={rate.id} className="flex items-center justify-between gap-2 py-1">
+                  <span className="text-sm text-muted">
+                    {rate.name}
+                    {rate.compound && <span className="text-muted-2"> · on tax above</span>}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={manualTaxAmounts[rate.id] !== undefined ? manualTaxAmounts[rate.id] : String(Math.round(amount * 100) / 100)}
+                      onChange={(e) => setManualTaxAmounts((m) => ({ ...m, [rate.id]: e.target.value }))}
+                      className="w-[92px] py-1 text-right text-sm font-medium text-warning"
+                    />
+                    {isManual && (
+                      <button
+                        type="button"
+                        title="Back to auto (% of bill)"
+                        onClick={() => setManualTaxAmounts((m) => ({ ...m, [rate.id]: '' }))}
+                        className="text-[11px] font-medium text-accent hover:underline"
+                      >
+                        Auto
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

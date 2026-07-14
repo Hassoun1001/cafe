@@ -204,6 +204,11 @@ model OrderTax {
   compound  Boolean  @default(false)
   sortOrder Int      @default(0)
   amount    Decimal  @default(0) @db.Decimal(12, 2)
+  // When set, `amount` is pinned to this value instead of being computed as
+  // percent × base (recomputeTotals) — lets the cashier type the exact tax
+  // figure from a supplier invoice/legacy bill instead of trusting the
+  // percentage calc. Null means "auto-calculated from percent" (the default).
+  manualAmount Decimal? @db.Decimal(12, 2)
   createdAt DateTime @default(now())
 
   @@unique([orderId, taxRateId])

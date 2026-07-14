@@ -49,6 +49,7 @@ export interface OrderTaxDto {
   percent: number;
   compound: boolean;
   amount: number;
+  manualAmount: number | null;
 }
 
 export type OrderStatus = 'OPEN' | 'PAID' | 'CANCELLED';

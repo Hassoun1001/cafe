@@ -7,6 +7,7 @@ import {
   setLineQtySchema,
   patchOrderSchema,
   orderTaxSchema,
+  orderTaxManualAmountSchema,
   paySchema,
   manualOrderSchema,
   salesHistoryQuerySchema,
@@ -104,6 +105,14 @@ ordersRouter.delete(
   '/:id/taxes/:taxRateId',
   asyncHandler(async (req, res) => {
     res.json(await ordersService.removeTaxFromOrder(req.params.id, req.params.taxRateId));
+  }),
+);
+
+ordersRouter.patch(
+  '/:id/taxes/:taxRateId',
+  asyncHandler(async (req, res) => {
+    const { manualAmount } = orderTaxManualAmountSchema.parse(req.body);
+    res.json(await ordersService.setOrderTaxManualAmount(req.params.id, req.params.taxRateId, manualAmount));
   }),
 );
 

@@ -84,6 +84,8 @@ export const addOrderTax = (orderId: string, taxRateId: string) =>
   api.post<OrderDto>(`/orders/${orderId}/taxes`, { taxRateId }).then((r) => r.data);
 export const removeOrderTax = (orderId: string, taxRateId: string) =>
   api.delete<OrderDto>(`/orders/${orderId}/taxes/${taxRateId}`).then((r) => r.data);
+export const setOrderTaxManualAmount = (orderId: string, taxRateId: string, manualAmount: number | null) =>
+  api.patch<OrderDto>(`/orders/${orderId}/taxes/${taxRateId}`, { manualAmount }).then((r) => r.data);
 export const payOrder = (orderId: string, method: 'CASH' | 'CARD', cashReceived?: number) =>
   api.post<OrderDto>(`/orders/${orderId}/pay`, { method, cashReceived }).then((r) => r.data);
 export const clearOrder = (orderId: string) => api.delete(`/orders/${orderId}`);
@@ -91,7 +93,7 @@ export const createManualOrder = (data: {
   tableId: string;
   items: { menuItemId?: string; name: string; price: number; qty: number }[];
   discountPercent?: number;
-  taxRateIds?: string[];
+  taxes?: { taxRateId: string; manualAmount?: number | null }[];
   paymentMethod: 'CASH' | 'CARD';
   cashReceived?: number;
   closedAt: string;

@@ -38,6 +38,7 @@ function serializeOrder(order: OrderWithRelations) {
       percent: toNum(t.percent),
       compound: t.compound,
       amount: toNum(t.amount),
+      manualAmount: t.manualAmount !== null ? toNum(t.manualAmount) : null,
     })),
     taxAmount: toNum(order.taxAmount),
     total: toNum(order.total),
@@ -94,8 +95,13 @@ async function recomputeTotals(orderId: string, client: TxClient | typeof prisma
   let taxTotal = 0;
   const taxUpdates: { id: string; amount: number }[] = [];
   for (const tax of order.taxes) {
-    const base = tax.compound && previousTaxAmount !== null ? previousTaxAmount : afterDiscount;
-    const amount = round2(base * (toNum(tax.percent) / 100));
+    // A manually-typed amount (e.g. an exact VAT figure off a supplier
+    // invoice) overrides the percentage calc entirely, but still feeds into
+    // a subsequent compound tax's base the same way a calculated amount would.
+    const amount: number =
+      tax.manualAmount !== null
+        ? round2(toNum(tax.manualAmount))
+        : round2((tax.compound && previousTaxAmount !== null ? previousTaxAmount : afterDiscount) * (toNum(tax.percent) / 100));
     taxUpdates.push({ id: tax.id, amount });
     taxTotal = round2(taxTotal + amount);
     previousTaxAmount = amount;
@@ -276,6 +282,21 @@ export async function removeTaxFromOrder(orderId: string, taxRateId: string) {
   });
 }
 
+// Pins an already-applied tax to a typed-in amount instead of its
+// percentage calc (e.g. the cashier reads the exact VAT figure off a
+// supplier invoice) — pass null to go back to auto-calculating from percent.
+export async function setOrderTaxManualAmount(orderId: string, taxRateId: string, manualAmount: number | null) {
+  const order = await findOrderOrThrow(orderId);
+  if (order.status !== 'OPEN') throw badRequest('Order is not open', 'ORDER_NOT_OPEN');
+  return prisma.$transaction(async (tx) => {
+    await lockOrder(tx, orderId);
+    const updated = await tx.orderTax.updateMany({ where: { orderId, taxRateId }, data: { manualAmount } });
+    if (updated.count === 0) throw notFound('This tax is not applied to the order');
+    await recomputeTotals(orderId, tx);
+    return serializeOrder(await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: orderInclude }));
+  });
+}
+
 // A drink ordered during a Study booking is a real Order on that resource's
 // linked table — paid/voided through this exact same Cafe flow (tax, receipt,
 // Sales history) as any dining order, deliberately not auto-settled from the
@@ -346,11 +367,13 @@ export async function deleteOrder(orderId: string, role?: UserRole) {
 
 // Records a sale that actually happened at some point in the past (e.g. a
 // bill closed yesterday in a different/legacy system) with its real item
-// list, discount, and taxes, backdated to that time — an admin-only Reports
-// page tool, not a POS flow. Deliberately skips stock deduction, same as the
-// Excel ledger importer (importLedgerFile): the physical stock was already
-// consumed and reconciled whenever the sale actually happened, so deducting
-// it again now would double-count. Reuses recomputeTotals for the actual
+// list, discount, and taxes, backdated to that time — a Reports page tool,
+// not a POS flow, but a routine staff task rather than an admin-only
+// correction. Deducts stock for any item tied to a real menu item, exactly
+// like a live POS sale (applyStockForMenuItemSale) — the physical stock for
+// this sale hasn't been accounted for yet just because it's being entered
+// late; free-text items (no menuItemId) have no recipe to deduct, same as
+// they would on a live order. Reuses recomputeTotals for the actual
 // subtotal/discount/tax/total math so a manual entry is calculated exactly
 // the same way a live POS sale would be, instead of a second parallel
 // implementation that could drift out of sync.
@@ -358,7 +381,7 @@ export async function createManualOrder(input: {
   tableId: string;
   items: { menuItemId?: string; name: string; price: number; qty: number }[];
   discountPercent?: number;
-  taxRateIds?: string[];
+  taxes?: { taxRateId: string; manualAmount?: number | null }[];
   paymentMethod: 'CASH' | 'CARD';
   cashReceived?: number;
   closedAt: string;
@@ -369,7 +392,9 @@ export async function createManualOrder(input: {
   const closedAt = new Date(input.closedAt);
   if (Number.isNaN(closedAt.getTime())) throw badRequest('Invalid date/time', 'INVALID_DATE');
 
-  const taxRates = input.taxRateIds?.length ? await prisma.taxRate.findMany({ where: { id: { in: input.taxRateIds } } }) : [];
+  const taxInputs = input.taxes ?? [];
+  const taxRates = taxInputs.length ? await prisma.taxRate.findMany({ where: { id: { in: taxInputs.map((t) => t.taxRateId) } } }) : [];
+  const manualAmountByTaxRateId = new Map(taxInputs.map((t) => [t.taxRateId, t.manualAmount ?? null]));
 
   return prisma.$transaction(async (tx) => {
     const created = await tx.order.create({
@@ -393,11 +418,15 @@ export async function createManualOrder(input: {
                 percent: t.percent,
                 compound: t.compound,
                 sortOrder: t.sortOrder,
+                manualAmount: manualAmountByTaxRateId.get(t.id) ?? null,
               })),
             }
           : undefined,
       },
     });
+    for (const item of input.items) {
+      if (item.menuItemId) await applyStockForMenuItemSale(tx, item.menuItemId, item.qty);
+    }
     await recomputeTotals(created.id, tx);
 
     const withTotals = await tx.order.findUniqueOrThrow({ where: { id: created.id } });

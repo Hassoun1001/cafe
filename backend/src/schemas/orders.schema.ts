@@ -20,6 +20,10 @@ export const orderTaxSchema = z.object({
   taxRateId: z.string().uuid(),
 });
 
+export const orderTaxManualAmountSchema = z.object({
+  manualAmount: z.number().min(0).nullable(),
+});
+
 export const paySchema = z.object({
   method: z.enum(['CASH', 'CARD']),
   cashReceived: z.number().min(0).optional(),
@@ -42,7 +46,14 @@ export const manualOrderSchema = z.object({
     )
     .min(1),
   discountPercent: z.number().min(0).max(100).optional(),
-  taxRateIds: z.array(z.string().uuid()).optional(),
+  taxes: z
+    .array(
+      z.object({
+        taxRateId: z.string().uuid(),
+        manualAmount: z.number().min(0).nullable().optional(),
+      }),
+    )
+    .optional(),
   paymentMethod: z.enum(['CASH', 'CARD']),
   cashReceived: z.number().min(0).optional(),
   closedAt: z.string().min(1),
