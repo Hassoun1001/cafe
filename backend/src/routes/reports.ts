@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { authenticate } from '../middleware/auth';
-import { reportsQuerySchema } from '../schemas/reports.schema';
+import { reportsQuerySchema, itemSalesQuerySchema } from '../schemas/reports.schema';
 import * as reportsService from '../services/reports.service';
 import * as ordersService from '../services/orders.service';
 import * as stockService from '../services/stock.service';
@@ -19,6 +19,53 @@ reportsRouter.get(
   asyncHandler(async (req, res) => {
     const query = reportsQuerySchema.parse(req.query);
     res.json(await reportsService.reportsSummary(query));
+  }),
+);
+
+reportsRouter.get(
+  '/items',
+  asyncHandler(async (req, res) => {
+    const { from, to, item } = itemSalesQuerySchema.parse(req.query);
+    res.json(await reportsService.itemSalesReport({ from, to }, item));
+  }),
+);
+
+reportsRouter.get(
+  '/items.pdf',
+  asyncHandler(async (req, res) => {
+    const { from, to, item } = itemSalesQuerySchema.parse(req.query);
+    const [report, settings] = await Promise.all([reportsService.itemSalesReport({ from, to }, item), getSettings()]);
+
+    const doc = createReportDoc(
+      report.item ? `Item Sales — ${report.item}` : 'Item Sales Report',
+      `${formatDateTime(report.range.from)} to ${formatDateTime(report.range.to)} - Generated ${formatDateTime(new Date())}`,
+    );
+    drawStats(doc, [
+      { label: 'Total qty', value: String(report.totalQty) },
+      { label: 'Total revenue', value: money(report.totalRevenue, settings.currency, settings.usdExchangeRate) },
+    ]);
+    if (item) {
+      drawTable(
+        doc,
+        [
+          { header: 'Date', width: 200 },
+          { header: 'Qty', width: 150, align: 'right' },
+          { header: 'Revenue', width: 150, align: 'right' },
+        ],
+        report.rows.map((r) => [formatDateTime('date' in r ? r.date : ''), r.qty, money(r.revenue, settings.currency)]),
+      );
+    } else {
+      drawTable(
+        doc,
+        [
+          { header: 'Item', width: 250 },
+          { header: 'Qty', width: 125, align: 'right' },
+          { header: 'Revenue', width: 125, align: 'right' },
+        ],
+        report.rows.map((r) => ['name' in r ? r.name : '', r.qty, money(r.revenue, settings.currency)]),
+      );
+    }
+    streamPdf(res, doc, report.item ? `item-sales-${report.item}.pdf` : 'item-sales-report.pdf');
   }),
 );
 

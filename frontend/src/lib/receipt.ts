@@ -26,6 +26,10 @@ export async function openEmployeesReportPdf(from?: string, to?: string): Promis
   await openPdfBlob('/reports/employees.pdf', { from, to });
 }
 
+export async function openItemSalesReportPdf(from?: string, to?: string, item?: string): Promise<void> {
+  await openPdfBlob('/reports/items.pdf', { from, to, item });
+}
+
 export async function openTrackerHistoryPdf(): Promise<void> {
   await openPdfBlob('/tracker/history.pdf');
 }

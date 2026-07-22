@@ -2,9 +2,20 @@ import bcrypt from 'bcryptjs';
 import type { AppSystem, UserRole } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { badRequest, notFound } from '../lib/errors';
+import { validPermissionKeys } from '../lib/permissions';
 
-function serialize(u: { id: string; username: string; role: UserRole; active: boolean; createdAt: Date }) {
-  return { id: u.id, username: u.username, role: u.role, active: u.active, createdAt: u.createdAt };
+function serialize(u: { id: string; username: string; role: UserRole; permissions: string[]; active: boolean; createdAt: Date }) {
+  return { id: u.id, username: u.username, role: u.role, permissions: u.permissions, active: u.active, createdAt: u.createdAt };
+}
+
+// Silently drops anything not in the current catalog rather than rejecting
+// the whole request — keeps a stale client (or a permission removed from the
+// catalog later) from hard-failing account management instead of just
+// ignoring the keys that no longer mean anything.
+function sanitizePermissions(system: AppSystem, permissions: string[] | undefined): string[] | undefined {
+  if (permissions === undefined) return undefined;
+  const valid = validPermissionKeys(system);
+  return permissions.filter((p) => valid.has(p));
 }
 
 export async function listUsers(system: AppSystem) {
@@ -12,9 +23,15 @@ export async function listUsers(system: AppSystem) {
   return users.map(serialize);
 }
 
-export async function createUser(system: AppSystem, username: string, password: string, role: UserRole = 'STAFF') {
+export async function createUser(
+  system: AppSystem,
+  username: string,
+  password: string,
+  role: UserRole = 'STAFF',
+  permissions: string[] = [],
+) {
   const passwordHash = await bcrypt.hash(password, 10);
-  const user = await prisma.user.create({ data: { system, username, passwordHash, role } });
+  const user = await prisma.user.create({ data: { system, username, passwordHash, role, permissions: sanitizePermissions(system, permissions) } });
   return serialize(user);
 }
 
@@ -30,12 +47,16 @@ async function assertNotLastActiveAdmin(system: AppSystem, userId: string) {
   if (otherActiveAdmins === 0) throw badRequest('Cannot remove the last active admin for this system', 'LAST_ADMIN');
 }
 
-export async function updateUser(system: AppSystem, id: string, data: { username?: string; active?: boolean; role?: UserRole }) {
+export async function updateUser(
+  system: AppSystem,
+  id: string,
+  data: { username?: string; active?: boolean; role?: UserRole; permissions?: string[] },
+) {
   const existing = await prisma.user.findFirst({ where: { id, system } });
   if (!existing) throw notFound('User not found');
   const demotingOrDeactivating = (data.role !== undefined && data.role !== 'ADMIN') || data.active === false;
   if (demotingOrDeactivating) await assertNotLastActiveAdmin(system, id);
-  return serialize(await prisma.user.update({ where: { id }, data }));
+  return serialize(await prisma.user.update({ where: { id }, data: { ...data, permissions: sanitizePermissions(system, data.permissions) } }));
 }
 
 export async function resetUserPassword(system: AppSystem, id: string, newPassword: string) {

@@ -31,19 +31,20 @@ function StudyProtectedLayout() {
   return <StudyLayout />;
 }
 
-// Settings is admin-only in both systems — this is UI-level convenience
-// (the backend independently rejects every admin-only request regardless),
-// but it keeps a STAFF account from ever landing on a page full of
-// buttons that will just 403.
-function CafeAdminOnly({ children }: { children: React.ReactNode }) {
-  const { isAdmin } = useAuth();
-  if (!isAdmin) return <Navigate to="/pos" replace />;
+// Settings is reachable by ADMIN, or by a STAFF account granted at least one
+// permission (every current permission key leads to a control that lives
+// somewhere on this page) — this is UI-level convenience (the backend
+// independently rejects every ungranted request regardless), but it keeps a
+// STAFF account with zero permissions from landing on an empty-looking page.
+function CafeSettingsGuard({ children }: { children: React.ReactNode }) {
+  const { isAdmin, permissions } = useAuth();
+  if (!isAdmin && permissions.length === 0) return <Navigate to="/pos" replace />;
   return <>{children}</>;
 }
 
-function StudyAdminOnly({ children }: { children: React.ReactNode }) {
-  const { isAdmin } = useStudyAuth();
-  if (!isAdmin) return <Navigate to="/study/board" replace />;
+function StudySettingsGuard({ children }: { children: React.ReactNode }) {
+  const { isAdmin, permissions } = useStudyAuth();
+  if (!isAdmin && permissions.length === 0) return <Navigate to="/study/board" replace />;
   return <>{children}</>;
 }
 
@@ -108,11 +109,11 @@ function CafeApp() {
         <Route
           path="settings"
           element={
-            <CafeAdminOnly>
+            <CafeSettingsGuard>
               <Suspense fallback={<Spinner />}>
                 <SettingsPage />
               </Suspense>
-            </CafeAdminOnly>
+            </CafeSettingsGuard>
           }
         />
       </Route>
@@ -145,11 +146,11 @@ function StudyApp() {
         <Route
           path="settings"
           element={
-            <StudyAdminOnly>
+            <StudySettingsGuard>
               <Suspense fallback={<Spinner />}>
                 <StudySettingsPage />
               </Suspense>
-            </StudyAdminOnly>
+            </StudySettingsGuard>
           }
         />
       </Route>

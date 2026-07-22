@@ -29,7 +29,7 @@ export function createApp() {
 
   // Cafe system
   app.use('/api/auth', createAuthRouter('CAFE', authenticate));
-  app.use('/api/users', createUsersRouter('CAFE', authenticate));
+  app.use('/api/users', createUsersRouter('CAFE', authenticate, 'users_manage'));
   app.use('/api/menu', menuRouter);
   app.use('/api/tables', tablesRouter);
   app.use('/api/orders', ordersRouter);
@@ -42,7 +42,7 @@ export function createApp() {
 
   // Study booking system — entirely separate login, own routes under /api/study/*
   app.use('/api/study/auth', createAuthRouter('STUDY', authenticateStudy));
-  app.use('/api/study/users', createUsersRouter('STUDY', authenticateStudy));
+  app.use('/api/study/users', createUsersRouter('STUDY', authenticateStudy, 'study_users_manage'));
   app.use('/api/study/resources', studyResourcesRouter);
   app.use('/api/study/bookings', studyBookingsRouter);
   app.use('/api/study/config', studyConfigRouter);

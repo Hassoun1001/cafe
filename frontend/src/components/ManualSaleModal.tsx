@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, X } from 'lucide-react';
 import * as api from '../api/endpoints';
@@ -7,6 +7,7 @@ import { apiErrorMessage } from '../lib/api';
 import { money } from '../lib/format';
 import { Button, Input, Label, Modal, Select } from './ui';
 import { SearchableSelect } from './SearchableSelect';
+import type { OrderDto } from '../types';
 
 interface Row {
   menuItemId: string | null;
@@ -17,17 +18,23 @@ interface Row {
 
 const emptyRow: Row = { menuItemId: null, name: '', price: '', qty: '1' };
 
-function nowLocalDateTime(): string {
-  const d = new Date();
+function toLocalDateTime(iso: string): string {
+  const d = new Date(iso);
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   return d.toISOString().slice(0, 16);
+}
+
+function nowLocalDateTime(): string {
+  return toLocalDateTime(new Date().toISOString());
 }
 
 // Backdates a sale that actually closed at some point in the past (e.g. a
 // bill from before this system was in use, or one closed in a parallel
 // legacy system) — same math as a live POS sale (recomputeTotals on the
 // backend), just entered by hand with a chosen date/time instead of "now".
-export function ManualSaleModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+// Pass `order` to edit an already-recorded sale in place instead of creating
+// a new one — same form, prefilled, PUT instead of POST.
+export function ManualSaleModal({ open, onClose, order }: { open: boolean; onClose: () => void; order?: OrderDto | null }) {
   const qc = useQueryClient();
   const toast = useToast();
 
@@ -63,6 +70,30 @@ export function ManualSaleModal({ open, onClose }: { open: boolean; onClose: () 
     setCashReceived('');
     setClosedAt(nowLocalDateTime());
   }
+
+  // Prefills the form from the sale being edited whenever the modal opens
+  // for one; opening fresh (no order) resets to a blank form instead.
+  useEffect(() => {
+    if (!open) return;
+    if (order) {
+      setTableId(order.table.id);
+      setRows(order.items.map((i) => ({ menuItemId: i.menuItemId, name: i.name, price: String(i.price), qty: String(i.qty) })));
+      setDiscountPercent(String(order.discountPercent));
+      const ids = order.taxes.map((t) => t.taxRateId).filter((id): id is string => !!id);
+      setTaxIds(ids);
+      setManualTaxAmounts(
+        Object.fromEntries(
+          order.taxes.filter((t) => t.taxRateId && t.manualAmount !== null).map((t) => [t.taxRateId as string, String(t.manualAmount)]),
+        ),
+      );
+      setPaymentMethod(order.paymentMethod ?? 'CASH');
+      setCashReceived(order.cashReceived !== null ? String(order.cashReceived) : '');
+      setClosedAt(toLocalDateTime(order.closedAt ?? order.openedAt));
+    } else {
+      resetForm();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, order]);
 
   function updateRow(i: number, patch: Partial<Row>) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -101,9 +132,9 @@ export function ManualSaleModal({ open, onClose }: { open: boolean; onClose: () 
     return { subtotal, discAmt, taxTotal, total: afterDiscount + taxTotal, taxRows };
   }, [rows, discountPercent, taxIds, manualTaxAmounts, taxRates]);
 
-  const createMutation = useMutation({
-    mutationFn: () =>
-      api.createManualOrder({
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const payload = {
         tableId,
         items: rows
           .filter((r) => r.name.trim() && (parseFloat(r.price) || 0) >= 0 && (parseInt(r.qty, 10) || 0) > 0)
@@ -121,11 +152,15 @@ export function ManualSaleModal({ open, onClose }: { open: boolean; onClose: () 
         paymentMethod,
         cashReceived: paymentMethod === 'CASH' ? parseFloat(cashReceived) || 0 : undefined,
         closedAt: new Date(closedAt).toISOString(),
-      }),
+      };
+      return order ? api.updateManualOrder(order.id, payload) : api.createManualOrder(payload);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orders', 'history'] });
       qc.invalidateQueries({ queryKey: ['reports', 'summary'] });
-      toast.show('Historical sale added', 'success');
+      qc.invalidateQueries({ queryKey: ['stock'] });
+      qc.invalidateQueries({ queryKey: ['tracker'] });
+      toast.show(order ? 'Sale updated' : 'Historical sale added', 'success');
       resetForm();
       onClose();
     },
@@ -150,7 +185,7 @@ export function ManualSaleModal({ open, onClose }: { open: boolean; onClose: () 
       toast.show('Cash received is less than the total due');
       return;
     }
-    createMutation.mutate();
+    saveMutation.mutate();
   }
 
   return (
@@ -160,12 +195,13 @@ export function ManualSaleModal({ open, onClose }: { open: boolean; onClose: () 
         resetForm();
         onClose();
       }}
-      title="Add historical sale"
+      title={order ? 'Edit sale' : 'Add historical sale'}
       maxWidth="640px"
     >
       <p className="mb-4 text-sm text-muted">
-        Record a sale that already happened — e.g. a bill closed yesterday, or in a different system — backdated to
-        when it actually closed.
+        {order
+          ? 'Correct this sale’s items, discount, tax, payment, or date/time — stock is re-adjusted for any item changes.'
+          : 'Record a sale that already happened — e.g. a bill closed yesterday, or in a different system — backdated to when it actually closed.'}
       </p>
 
       <div className="mb-4 grid grid-cols-2 gap-3">
@@ -333,8 +369,8 @@ export function ManualSaleModal({ open, onClose }: { open: boolean; onClose: () 
         </div>
       </div>
 
-      <Button variant="primary" className="mt-5 w-full" disabled={createMutation.isPending} onClick={handleSubmit}>
-        {createMutation.isPending ? 'Saving…' : 'Add historical sale'}
+      <Button variant="primary" className="mt-5 w-full" disabled={saveMutation.isPending} onClick={handleSubmit}>
+        {saveMutation.isPending ? 'Saving…' : order ? 'Save changes' : 'Add historical sale'}
       </Button>
     </Modal>
   );

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, Minus, Plus, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Minus, Plus, Search, X } from 'lucide-react';
 import * as api from '../api/endpoints';
 import { useToast } from '../lib/toast';
 import { apiErrorMessage } from '../lib/api';
@@ -10,7 +10,7 @@ import { Alert, Badge, Button, Card, Input, Label, PageHeader, Select, StatCard,
 export function WarehousePage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
   const stockQuery = useQuery({ queryKey: ['stock'], queryFn: api.getStock });
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const categoriesQuery = useQuery({ queryKey: ['settings', 'stock-categories'], queryFn: api.getStockCategories });
@@ -22,6 +22,7 @@ export function WarehousePage() {
 
   const [form, setForm] = useState({ name: '', nameAr: '', qty: '', unit: '', minQty: '', costPerUnit: '', category: '' });
   const [setInputs, setSetInputs] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState('');
   const formUnit = form.unit || units[0]?.name || '';
   const formCategory = form.category || categories[0]?.name || '';
 
@@ -66,6 +67,10 @@ export function WarehousePage() {
   });
 
   const stock = stockQuery.data ?? [];
+  const visibleStock = stock.filter((s) => {
+    const q = search.trim().toLowerCase();
+    return q === '' || s.name.toLowerCase().includes(q) || (s.nameAr ?? '').toLowerCase().includes(q);
+  });
   const low = stock.filter((s) => s.qty <= s.minQty);
   const value = stock.reduce((s, x) => s + x.qty * x.costPerUnit, 0);
 
@@ -164,6 +169,10 @@ export function WarehousePage() {
       </Card>
 
       <Card title="Stock list">
+        <div className="relative mb-3 max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-2" />
+          <Input placeholder="Search stock…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -179,7 +188,7 @@ export function WarehousePage() {
               </tr>
             </thead>
             <tbody>
-              {stock.map((s) => {
+              {visibleStock.map((s) => {
                 const isLow = s.qty <= s.minQty;
                 return (
                   <tr key={s.id} className="border-b border-border last:border-b-0 hover:bg-bg/60">
@@ -238,7 +247,7 @@ export function WarehousePage() {
                             }
                           }}
                         />
-                        {isAdmin && (
+                        {can('stock_delete') && (
                           <Button size="sm" variant="danger" onClick={() => remove.mutate(s.id)}>
                             <X className="size-3.5" />
                           </Button>
@@ -248,6 +257,13 @@ export function WarehousePage() {
                   </tr>
                 );
               })}
+              {visibleStock.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="py-6 text-center text-sm text-muted">
+                    No matching stock items
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

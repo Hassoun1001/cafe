@@ -26,7 +26,7 @@ function resourceKindLabel(kind: TableKind) {
 export function BoardPage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const { isAdmin } = useStudyAuth();
+  const { can } = useStudyAuth();
   const now = useNow();
 
   const resourcesQuery = useQuery({ queryKey: ['study', 'resources'], queryFn: api.getResources, refetchInterval: 8000 });
@@ -172,7 +172,7 @@ export function BoardPage() {
               <Coffee className="size-3.5" />
               Waiting on {booking.drinkCount} drink{booking.drinkCount > 1 ? 's' : ''} — pay in Cafe → Tables → Study tab
             </div>
-            {isAdmin && (
+            {can('study_bookings_delete') && (
               <Button size="sm" variant="danger" className="w-full" onClick={() => setDeleteBookingId(booking.id)}>
                 <Trash2 className="size-3.5" />
                 Remove (correction)
@@ -214,7 +214,7 @@ export function BoardPage() {
               <Button size="sm" variant="secondary" onClick={() => setCancelBookingId(booking.id)}>
                 <Ban className="size-3.5" />
               </Button>
-              {isAdmin && (
+              {can('study_bookings_delete') && (
                 <Button size="sm" variant="danger" onClick={() => setDeleteBookingId(booking.id)}>
                   <Trash2 className="size-3.5" />
                 </Button>

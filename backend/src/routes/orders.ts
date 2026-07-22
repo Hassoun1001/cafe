@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requirePermission } from '../middleware/auth';
 import {
   openOrderSchema,
   addItemSchema,
@@ -45,13 +45,22 @@ ordersRouter.post(
 
 // Manual/backdated historical entry — a routine staff task (recording a bill
 // that closed elsewhere/earlier), not a destructive or settings action, so
-// any authenticated user can use it. Deleting an already-recorded sale is a
-// separate, still admin-only action (see DELETE /:id below).
+// any authenticated user can use it. Editing/deleting an already-recorded
+// sale are separate, permission-gated actions (see below).
 ordersRouter.post(
   '/manual',
   asyncHandler(async (req, res) => {
     const data = manualOrderSchema.parse(req.body);
     res.status(201).json(await ordersService.createManualOrder(data));
+  }),
+);
+
+ordersRouter.put(
+  '/:id/manual',
+  requirePermission('sales_edit'),
+  asyncHandler(async (req, res) => {
+    const data = manualOrderSchema.parse(req.body);
+    res.json(await ordersService.updateManualOrder(req.params.id, data));
   }),
 );
 
@@ -127,7 +136,8 @@ ordersRouter.post(
 ordersRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
-    await ordersService.deleteOrder(req.params.id, req.user?.role);
+    const canDeleteHistorical = req.user?.role === 'ADMIN' || !!req.user?.permissions.includes('sales_delete');
+    await ordersService.deleteOrder(req.params.id, canDeleteHistorical);
     res.status(204).end();
   }),
 );

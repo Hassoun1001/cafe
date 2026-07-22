@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ChefHat, ChevronDown, Info, KeyRound, Lock, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { AlertTriangle, ChefHat, ChevronDown, Info, KeyRound, Lock, Plus, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import * as api from '../api/endpoints';
 import { useToast } from '../lib/toast';
 import { apiErrorMessage } from '../lib/api';
@@ -8,12 +8,13 @@ import { useAuth } from '../lib/auth';
 import { money } from '../lib/format';
 import { Badge, Button, Card, ConfirmModal, Input, Label, Modal, PageHeader, Select } from '../components/ui';
 import { RecipeEditorModal } from '../components/RecipeEditorModal';
+import { PermissionMatrix } from '../components/PermissionMatrix';
 import type { ImportResultDto, MenuItemDto, UserRole } from '../types';
 
 export function SettingsPage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const { logout } = useAuth();
+  const { logout, can } = useAuth();
 
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const menuQuery = useQuery({ queryKey: ['menu'], queryFn: api.getMenu });
@@ -23,6 +24,8 @@ export function SettingsPage() {
   const stockCategoriesQuery = useQuery({ queryKey: ['settings', 'stock-categories'], queryFn: api.getStockCategories });
   const stockUnitsQuery = useQuery({ queryKey: ['settings', 'stock-units'], queryFn: api.getStockUnits });
   const usersQuery = useQuery({ queryKey: ['users'], queryFn: api.getUsers });
+  const permCatalogQuery = useQuery({ queryKey: ['permissions'], queryFn: api.getPermissionCatalog });
+  const permCatalog = permCatalogQuery.data ?? [];
 
   const settings = settingsQuery.data;
 
@@ -42,16 +45,20 @@ export function SettingsPage() {
   const [newUsername, setNewUsername] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('STAFF');
+  const [newUserPermissions, setNewUserPermissions] = useState<string[]>([]);
   const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null);
   const [resetPasswordValue, setResetPasswordValue] = useState('');
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
+  const [permissionsUserId, setPermissionsUserId] = useState<string | null>(null);
+  const [editingPermissions, setEditingPermissions] = useState<string[]>([]);
   const createUserMutation = useMutation({
-    mutationFn: () => api.createUser(newUsername.trim(), newUserPassword, newUserRole),
+    mutationFn: () => api.createUser(newUsername.trim(), newUserPassword, newUserRole, newUserPermissions),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] });
       setNewUsername('');
       setNewUserPassword('');
       setNewUserRole('STAFF');
+      setNewUserPermissions([]);
       toast.show('User added', 'success');
     },
     onError: (e) => toast.show(apiErrorMessage(e), 'error'),
@@ -64,6 +71,15 @@ export function SettingsPage() {
   const changeUserRole = useMutation({
     mutationFn: (vars: { id: string; role: UserRole }) => api.updateUser(vars.id, { role: vars.role }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+    onError: (e) => toast.show(apiErrorMessage(e), 'error'),
+  });
+  const saveUserPermissions = useMutation({
+    mutationFn: () => api.updateUser(permissionsUserId as string, { permissions: editingPermissions }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      setPermissionsUserId(null);
+      toast.show('Permissions saved', 'success');
+    },
     onError: (e) => toast.show(apiErrorMessage(e), 'error'),
   });
   const resetUserPasswordMutation = useMutation({
@@ -267,6 +283,7 @@ export function SettingsPage() {
   const [itemNameEdits, setItemNameEdits] = useState<Record<string, string>>({});
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [itemNameArEdits, setItemNameArEdits] = useState<Record<string, string>>({});
+  const [menuItemSearch, setMenuItemSearch] = useState('');
   const saveItems = useMutation({
     mutationFn: (edits: { id: string; name?: string; price?: number; nameAr?: string }[]) => api.bulkSaveItems(edits),
     onSuccess: () => {
@@ -400,6 +417,7 @@ export function SettingsPage() {
     <div>
       <PageHeader title="Settings" description="Tax, receipt branding, menu prices, team, and security." />
 
+      {can('tax_manage') && (
       <Card title="Tax rates">
         <div className="mb-3 flex items-center gap-2 rounded-xl bg-info-light px-4 py-3 text-[13px] font-medium text-info">
           <Info className="size-4 shrink-0" />
@@ -453,7 +471,9 @@ export function SettingsPage() {
           {(taxRatesQuery.data ?? []).length === 0 && <div className="py-2 text-sm text-muted">No tax rates yet</div>}
         </div>
       </Card>
+      )}
 
+      {can('settings_general') && (
       <Card title="Receipt">
         <div className="flex items-center justify-between border-b border-border py-3.5 first:pt-0">
           <div className="text-sm font-medium text-ink">Shop name</div>
@@ -497,7 +517,10 @@ export function SettingsPage() {
           />
         </div>
       </Card>
+      )}
 
+      {can('menu_manage') && (
+      <>
       <Card title="Menu categories">
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div className="min-w-[160px]">
@@ -627,6 +650,10 @@ export function SettingsPage() {
             Add item
           </Button>
         </div>
+        <div className="relative mb-3 max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-2" />
+          <Input placeholder="Search menu items…" value={menuItemSearch} onChange={(e) => setMenuItemSearch(e.target.value)} className="pl-9" />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -640,8 +667,13 @@ export function SettingsPage() {
               </tr>
             </thead>
             <tbody>
-              {(menuQuery.data ?? []).flatMap((cat) =>
-                cat.items.map((item) => (
+              {(menuQuery.data ?? [])
+                .flatMap((cat) => cat.items.map((item) => ({ cat, item })))
+                .filter(({ item }) => {
+                  const q = menuItemSearch.trim().toLowerCase();
+                  return q === '' || item.name.toLowerCase().includes(q) || (item.nameAr ?? '').toLowerCase().includes(q);
+                })
+                .map(({ cat, item }) => (
                   <tr key={item.id} className="border-b border-border last:border-b-0">
                     <td className="py-2.5 pr-3">
                       <Input
@@ -683,8 +715,7 @@ export function SettingsPage() {
                       </Button>
                     </td>
                   </tr>
-                )),
-              )}
+                ))}
             </tbody>
           </table>
         </div>
@@ -693,7 +724,10 @@ export function SettingsPage() {
           Save all changes
         </Button>
       </Card>
+      </>
+      )}
 
+      {can('employees_manage') && (
       <Card title="Team members">
         <div className="mb-3 grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
           <div>
@@ -732,7 +766,9 @@ export function SettingsPage() {
           ))}
         </div>
       </Card>
+      )}
 
+      {can('tables_manage') && (
       <Card title="Tables">
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div className="w-28">
@@ -773,7 +809,10 @@ export function SettingsPage() {
           {(tablesQuery.data ?? []).length === 0 && <div className="py-2 text-sm text-muted">No tables yet</div>}
         </div>
       </Card>
+      )}
 
+      {can('stock_catalog_manage') && (
+      <>
       <Card title="Stock categories">
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div className="min-w-[160px]">
@@ -839,7 +878,10 @@ export function SettingsPage() {
           {(stockUnitsQuery.data ?? []).length === 0 && <div className="py-2 text-sm text-muted">No units yet</div>}
         </div>
       </Card>
+      </>
+      )}
 
+      {can('discounts_manage') && (
       <Card title="Discount presets">
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div className="min-w-[160px]">
@@ -878,7 +920,9 @@ export function SettingsPage() {
           {(presetsQuery.data ?? []).length === 0 && <div className="py-2 text-sm text-muted">No presets yet</div>}
         </div>
       </Card>
+      )}
 
+      {can('users_manage') && (
       <Card title="Team access">
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div className="min-w-[160px]">
@@ -910,6 +954,12 @@ export function SettingsPage() {
             Add user
           </Button>
         </div>
+        {newUserRole === 'STAFF' && permCatalog.length > 0 && (
+          <div className="mb-4">
+            <Label>Permissions (Staff only — Admin always has full access)</Label>
+            <PermissionMatrix catalog={permCatalog} selected={newUserPermissions} onChange={setNewUserPermissions} />
+          </div>
+        )}
         <div>
           {(usersQuery.data ?? []).map((u) => (
             <div key={u.id} className="flex items-center justify-between border-b border-border py-2.5 last:border-b-0">
@@ -917,6 +967,7 @@ export function SettingsPage() {
                 {u.username}
                 <Badge tone={u.role === 'ADMIN' ? 'amber' : 'gray'}>{u.role === 'ADMIN' ? 'Admin' : 'Staff'}</Badge>
                 <Badge tone={u.active ? 'green' : 'gray'}>{u.active ? 'Active' : 'Disabled'}</Badge>
+                {u.role === 'STAFF' && u.permissions.length > 0 && <Badge tone="blue">{u.permissions.length} permission{u.permissions.length === 1 ? '' : 's'}</Badge>}
               </span>
               <div className="flex items-center gap-1.5">
                 <Select
@@ -927,6 +978,18 @@ export function SettingsPage() {
                   <option value="STAFF">Staff</option>
                   <option value="ADMIN">Admin</option>
                 </Select>
+                {u.role === 'STAFF' && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setPermissionsUserId(u.id);
+                      setEditingPermissions(u.permissions);
+                    }}
+                  >
+                    Permissions
+                  </Button>
+                )}
                 <Button size="sm" variant="secondary" onClick={() => toggleUserActive.mutate({ id: u.id, active: !u.active })}>
                   {u.active ? 'Disable' : 'Enable'}
                 </Button>
@@ -942,6 +1005,7 @@ export function SettingsPage() {
           {(usersQuery.data ?? []).length === 0 && <div className="py-2 text-sm text-muted">No users yet</div>}
         </div>
       </Card>
+      )}
 
       <Card title="Security">
         <div className="flex items-center justify-between border-b border-border py-3.5 first:pt-0">
@@ -960,6 +1024,7 @@ export function SettingsPage() {
         </div>
       </Card>
 
+      {can('import_legacy') && (
       <Card title="Import legacy sales">
         <div className="mb-3 flex items-center gap-2 rounded-xl bg-info-light px-4 py-3 text-[13px] font-medium text-info">
           <Info className="size-4 shrink-0" />
@@ -997,7 +1062,9 @@ export function SettingsPage() {
           </div>
         )}
       </Card>
+      )}
 
+      {can('danger_zone') && (
       <Card title="Danger zone">
         <div className="flex items-center justify-between border-b border-border py-3.5 first:pt-0">
           <div className="text-sm font-medium text-ink">Clear all sales</div>
@@ -1021,6 +1088,7 @@ export function SettingsPage() {
           </Button>
         </div>
       </Card>
+      )}
 
       <RecipeEditorModal item={recipeItem} onClose={() => setRecipeItem(null)} />
 
@@ -1074,6 +1142,18 @@ export function SettingsPage() {
             Save
           </Button>
           <Button variant="secondary" onClick={() => setResetPasswordUserId(null)}>
+            Cancel
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!permissionsUserId} onClose={() => setPermissionsUserId(null)} title="Edit permissions" maxWidth="600px">
+        <PermissionMatrix catalog={permCatalog} selected={editingPermissions} onChange={setEditingPermissions} />
+        <div className="mt-5 flex gap-2">
+          <Button variant="primary" className="flex-1" onClick={() => saveUserPermissions.mutate()}>
+            Save
+          </Button>
+          <Button variant="secondary" onClick={() => setPermissionsUserId(null)}>
             Cancel
           </Button>
         </div>

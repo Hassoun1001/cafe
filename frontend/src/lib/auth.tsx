@@ -6,6 +6,11 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   isAdmin: boolean;
   username: string | null;
+  permissions: string[];
+  // ADMIN always passes regardless of key — mirrors the backend's
+  // requirePermission middleware so the UI hides exactly what the API would
+  // reject anyway.
+  can: (key: string) => boolean;
   login: (token: string) => void;
   logout: () => void;
 }
@@ -30,11 +35,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [logout]);
 
   const value = useMemo(() => {
-    const payload = decodeJwt<{ role?: string; username?: string }>(token);
+    const payload = decodeJwt<{ role?: string; username?: string; permissions?: string[] }>(token);
+    const isAdmin = payload?.role === 'ADMIN';
+    const permissions = payload?.permissions ?? [];
     return {
       isAuthenticated: !!token,
-      isAdmin: payload?.role === 'ADMIN',
+      isAdmin,
       username: payload?.username ?? null,
+      permissions,
+      can: (key: string) => isAdmin || permissions.includes(key),
       login,
       logout,
     };

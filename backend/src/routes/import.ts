@@ -1,16 +1,18 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { authenticate, requireAdmin } from '../middleware/auth';
+import { authenticate, requirePermission } from '../middleware/auth';
 import { badRequest } from '../lib/errors';
 import * as importService from '../services/import.service';
 
 export const importRouter = Router();
-importRouter.use(authenticate, requireAdmin);
+importRouter.use(authenticate, requirePermission('import_legacy'));
 
-// Kept small and memory-only — this is an occasional admin action (a
-// handful of daily ledger exports), not a general file-storage feature.
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+// Memory-only (not saved to disk) — this is an occasional admin action, not
+// a general file-storage feature. 25MB comfortably covers even a multi-year
+// ledger export; the previous 5MB cap was too tight for real exports and
+// forced splitting a file into several smaller ones to get under it.
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 importRouter.post(
   '/sales-ledger',

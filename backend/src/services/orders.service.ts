@@ -1,4 +1,4 @@
-import { Prisma, UserRole } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { toNum, round2 } from '../lib/decimal';
 import { badRequest, forbidden, notFound } from '../lib/errors';
@@ -349,7 +349,7 @@ export async function payOrder(orderId: string, method: 'CASH' | 'CARD', cashRec
 // actually needed (the hard-delete branch) — internal callers (Study
 // booking cancel/delete) only ever hit the OPEN branch, so they don't need
 // to pass one.
-export async function deleteOrder(orderId: string, role?: UserRole) {
+export async function deleteOrder(orderId: string, canDeleteHistorical = false) {
   const order = await findOrderOrThrow(orderId);
   if (order.status === 'OPEN') {
     await prisma.$transaction(async (tx) => {
@@ -361,7 +361,7 @@ export async function deleteOrder(orderId: string, role?: UserRole) {
     await completeLinkedStudyBookingIfReady(orderId);
     return;
   }
-  if (role !== 'ADMIN') throw forbidden('Only an admin account can delete a historical sale', 'ADMIN_REQUIRED');
+  if (!canDeleteHistorical) throw forbidden("You don't have permission to delete a historical sale", 'PERMISSION_REQUIRED');
   await prisma.order.delete({ where: { id: orderId } });
 }
 
@@ -448,6 +448,101 @@ export async function createManualOrder(input: {
       include: orderInclude,
     });
     return serializeOrder(paid);
+  });
+}
+
+// Edits an already-recorded sale in place — same shape as createManualOrder,
+// but for correcting a mistake in a sale that's already PAID (including a
+// legacy-imported one), rather than entering a new one. Not usable on an
+// OPEN order — that's what the live POS screen is for. Old items' stock
+// impact is fully reversed and the new items' stock impact reapplied, the
+// same way deleting an OPEN order restores stock — otherwise correcting a
+// sale's items would silently double-count or drop stock.
+export async function updateManualOrder(
+  orderId: string,
+  input: {
+    tableId: string;
+    items: { menuItemId?: string; name: string; price: number; qty: number }[];
+    discountPercent?: number;
+    taxes?: { taxRateId: string; manualAmount?: number | null }[];
+    paymentMethod: 'CASH' | 'CARD';
+    cashReceived?: number;
+    closedAt: string;
+  },
+) {
+  const existing = await findOrderOrThrow(orderId);
+  if (existing.status === 'OPEN') throw badRequest('Use the Cashier screen to edit an open order', 'ORDER_OPEN');
+
+  const table = await prisma.cafeTable.findUnique({ where: { id: input.tableId } });
+  if (!table) throw notFound('Table not found');
+
+  const closedAt = new Date(input.closedAt);
+  if (Number.isNaN(closedAt.getTime())) throw badRequest('Invalid date/time', 'INVALID_DATE');
+
+  const taxInputs = input.taxes ?? [];
+  const taxRates = taxInputs.length ? await prisma.taxRate.findMany({ where: { id: { in: taxInputs.map((t) => t.taxRateId) } } }) : [];
+  const manualAmountByTaxRateId = new Map(taxInputs.map((t) => [t.taxRateId, t.manualAmount ?? null]));
+
+  return prisma.$transaction(async (tx) => {
+    await lockOrder(tx, orderId);
+    for (const line of existing.items) {
+      await applyStockForMenuItemSale(tx, line.menuItemId, -line.qty);
+    }
+    await tx.orderItem.deleteMany({ where: { orderId } });
+    await tx.orderTax.deleteMany({ where: { orderId } });
+
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        tableId: input.tableId,
+        discountPercent: input.discountPercent ?? 0,
+        openedAt: closedAt,
+        items: {
+          create: input.items.map((i) => ({
+            menuItemId: i.menuItemId ?? null,
+            nameSnapshot: i.name,
+            priceSnapshot: i.price,
+            qty: i.qty,
+          })),
+        },
+        taxes: taxRates.length
+          ? {
+              create: taxRates.map((t) => ({
+                taxRateId: t.id,
+                name: t.name,
+                percent: t.percent,
+                compound: t.compound,
+                sortOrder: t.sortOrder,
+                manualAmount: manualAmountByTaxRateId.get(t.id) ?? null,
+              })),
+            }
+          : undefined,
+      },
+    });
+    for (const item of input.items) {
+      if (item.menuItemId) await applyStockForMenuItemSale(tx, item.menuItemId, item.qty);
+    }
+    await recomputeTotals(orderId, tx);
+
+    const withTotals = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
+    const total = toNum(withTotals.total);
+    if (input.paymentMethod === 'CASH' && (input.cashReceived === undefined || input.cashReceived < total)) {
+      throw badRequest('Cash received is less than the total due', 'INSUFFICIENT_CASH');
+    }
+    const changeGiven = input.paymentMethod === 'CASH' ? round2((input.cashReceived as number) - total) : null;
+
+    const updated = await tx.order.update({
+      where: { id: orderId },
+      data: {
+        status: 'PAID',
+        paymentMethod: input.paymentMethod,
+        cashReceived: input.paymentMethod === 'CASH' ? input.cashReceived : null,
+        changeGiven,
+        closedAt,
+      },
+      include: orderInclude,
+    });
+    return serializeOrder(updated);
   });
 }
 

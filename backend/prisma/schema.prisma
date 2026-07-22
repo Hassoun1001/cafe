@@ -55,6 +55,15 @@ model User {
   username     String
   passwordHash String
   role         UserRole  @default(STAFF)
+  // Only consulted for STAFF — ADMIN always has every permission regardless
+  // of this list, so it's never populated/checked for an ADMIN account. Each
+  // entry is a permission key from PERMISSIONS in middleware/permissions.ts
+  // (kept in sync with the same catalog on the frontend for the checkbox
+  // matrix in Settings/StudySettings Team Access). A STAFF account with no
+  // entries here can still do every action that was never permission-gated
+  // in the first place (POS, bookings, restocking, etc.) — this list only
+  // grants back the subset of actions that are otherwise admin-only.
+  permissions  String[]  @default([])
   active       Boolean   @default(true)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

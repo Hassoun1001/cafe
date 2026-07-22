@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Download, FileText, Save } from 'lucide-react';
+import { AlertTriangle, Download, FileText, Save, Search } from 'lucide-react';
 import * as api from '../api/endpoints';
 import { useToast } from '../lib/toast';
 import { apiErrorMessage } from '../lib/api';
@@ -15,6 +15,7 @@ export function TrackerPage() {
   const rowsQuery = useQuery({ queryKey: ['tracker'], queryFn: api.getTrackerRows });
   const historyQuery = useQuery({ queryKey: ['tracker', 'history'], queryFn: api.getTrackerHistory });
   const [counts, setCounts] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState('');
 
   const save = useMutation({
     mutationFn: (payload: { stockItemId: string; physicalQty: number }[]) => api.saveTrackerCounts(payload),
@@ -59,6 +60,10 @@ export function TrackerPage() {
   }
 
   const rows = rowsQuery.data ?? [];
+  const visibleRows = rows.filter((r) => {
+    const q = search.trim().toLowerCase();
+    return q === '' || r.name.toLowerCase().includes(q) || (r.nameAr ?? '').toLowerCase().includes(q);
+  });
   const history = historyQuery.data ?? [];
 
   return (
@@ -90,6 +95,10 @@ export function TrackerPage() {
           Enter what you physically counted below. Saving updates the system stock to match — this is a real
           reconciliation, not just a comparison, so only save once you've actually counted.
         </Alert>
+        <div className="relative mb-3 mt-3 max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-2" />
+          <Input placeholder="Search stock…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -102,7 +111,7 @@ export function TrackerPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {visibleRows.map((r) => {
                 const physical = counts[r.id] ?? '';
                 const diff = physical !== '' ? parseFloat(physical) - r.systemQty : null;
                 return (
@@ -144,6 +153,13 @@ export function TrackerPage() {
                   </tr>
                 );
               })}
+              {visibleRows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-6 text-center text-sm text-muted">
+                    No matching stock items
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

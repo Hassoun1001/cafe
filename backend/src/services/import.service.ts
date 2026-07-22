@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { prisma } from '../lib/prisma';
 import { parseLedgerFile, type LedgerRow } from '../lib/ledgerImport';
 import { badRequest } from '../lib/errors';
@@ -47,8 +48,15 @@ export async function importLedgerFile(buffer: Buffer) {
   const tables = await prisma.cafeTable.findMany({ where: { kind: 'DINING' } });
   const tableByNumber = new Map(tables.map((t) => [t.number, t]));
 
-  let imported = 0;
+  // Built up as plain arrays and inserted with two batched createMany calls
+  // instead of one `await prisma.order.create()` per row — a large ledger
+  // (thousands of rows) awaited one network round trip at a time to a remote
+  // DB could take minutes and risk timing out; a couple of batched inserts
+  // finish in a fraction of that regardless of row count. createMany has no
+  // nested-write support, so each order's id is generated up front and reused
+  // for its (single) order item instead of relying on Prisma's auto @default.
   let alreadyImported = 0;
+  const ordersToCreate: { id: string; tableId: string; openedAt: Date; closedAt: Date; importRef: string; amount: number }[] = [];
   for (const row of rows) {
     const importRef = `legacy-${row.entryNumber}`;
     if (existingRefSet.has(importRef)) {
@@ -61,25 +69,32 @@ export async function importLedgerFile(buffer: Buffer) {
       continue;
     }
     const when = times.get(row.entryNumber) ?? row.date;
-    await prisma.order.create({
-      data: {
-        tableId: table.id,
-        status: 'PAID',
-        subtotal: row.amount,
-        total: row.amount,
-        paymentMethod: 'CASH',
-        cashReceived: row.amount,
-        changeGiven: 0,
-        openedAt: when,
-        closedAt: when,
-        importRef,
-        items: {
-          create: [{ nameSnapshot: 'Imported sale (legacy system)', priceSnapshot: row.amount, qty: 1 }],
-        },
-      },
-    });
-    imported++;
+    ordersToCreate.push({ id: randomUUID(), tableId: table.id, openedAt: when, closedAt: when, importRef, amount: row.amount });
   }
 
-  return { imported, alreadyImported, skipped: skippedDetails.length, skippedDetails };
+  if (ordersToCreate.length > 0) {
+    await prisma.$transaction([
+      prisma.order.createMany({
+        data: ordersToCreate.map((o) => ({
+          id: o.id,
+          tableId: o.tableId,
+          status: 'PAID',
+          subtotal: o.amount,
+          total: o.amount,
+          paymentMethod: 'CASH',
+          cashReceived: o.amount,
+          changeGiven: 0,
+          openedAt: o.openedAt,
+          closedAt: o.closedAt,
+          importRef: o.importRef,
+        })),
+        skipDuplicates: true,
+      }),
+      prisma.orderItem.createMany({
+        data: ordersToCreate.map((o) => ({ orderId: o.id, nameSnapshot: 'Imported sale (legacy system)', priceSnapshot: o.amount, qty: 1 })),
+      }),
+    ]);
+  }
+
+  return { imported: ordersToCreate.length, alreadyImported, skipped: skippedDetails.length, skippedDetails };
 }

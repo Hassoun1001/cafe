@@ -5,3 +5,9 @@ export const reportsQuerySchema = z.object({
   to: z.string().optional(),
   groupBy: z.enum(['day', 'week', 'month']).optional(),
 });
+
+export const itemSalesQuerySchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+  item: z.string().optional(),
+});

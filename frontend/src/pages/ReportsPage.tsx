@@ -1,17 +1,17 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, Plus, Printer, X } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, Pencil, Plus, Printer, Search, X } from 'lucide-react';
 import * as api from '../api/endpoints';
 import { useToast } from '../lib/toast';
 import { apiErrorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { exportToExcel, todayFileStamp } from '../lib/excel';
 import { formatDateTime, money } from '../lib/format';
-import { openEmployeesReportPdf, openReceiptPdf, openSalesReportPdf, openStockReportPdf } from '../lib/receipt';
-import { Button, Badge, Card, ConfirmModal, Input, Label, PageHeader, Pill, StatCard, StatGrid } from '../components/ui';
+import { openEmployeesReportPdf, openItemSalesReportPdf, openReceiptPdf, openSalesReportPdf, openStockReportPdf } from '../lib/receipt';
+import { Button, Badge, Card, ConfirmModal, Input, Label, PageHeader, Pill, Select, StatCard, StatGrid } from '../components/ui';
 import { ManualSaleModal } from '../components/ManualSaleModal';
-import type { ReportGroupBy } from '../types';
+import type { OrderDto, ReportGroupBy } from '../types';
 
 function toDateStr(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -50,7 +50,7 @@ const QUICK_RANGES: { label: string; range: () => { from: string; to: string } }
 export function ReportsPage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [groupBy, setGroupBy] = useState<ReportGroupBy>('day');
@@ -58,6 +58,9 @@ export function ReportsPage() {
   const [page, setPage] = useState(1);
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
   const [manualSaleOpen, setManualSaleOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<OrderDto | null>(null);
+  const [itemSearch, setItemSearch] = useState('');
+  const [itemExportChoice, setItemExportChoice] = useState('');
 
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const currency = settingsQuery.data?.currency ?? 'SYP';
@@ -159,6 +162,32 @@ export function ReportsPage() {
     });
   }
 
+  // "All items" reuses the summary already loaded for the current date range
+  // (same data shown in the on-screen table); picking one item fetches its
+  // own day-by-day breakdown instead of a single flat row.
+  async function handleExportItemSales() {
+    if (!itemExportChoice) {
+      const rows: (string | number)[][] = [['Item', 'Qty', `Revenue (${currency})`]];
+      (summary?.itemSales ?? []).forEach((i) => rows.push([i.name, i.qty, i.revenue]));
+      if (rows.length === 1) {
+        toast.show('No sales in this range');
+        return;
+      }
+      exportToExcel(`StudioCafe_ItemSales_All_${todayFileStamp()}.xlsx`, 'Item Sales', rows);
+      toast.show('Exported!', 'success');
+      return;
+    }
+    const report = await api.getItemSalesReport(from || undefined, to || undefined, itemExportChoice);
+    if (report.rows.length === 0) {
+      toast.show('No sales in this range');
+      return;
+    }
+    const rows: (string | number)[][] = [['Date', 'Qty', `Revenue (${currency})`]];
+    report.rows.forEach((r) => rows.push([formatDateTime('date' in r ? r.date : ''), r.qty, r.revenue]));
+    exportToExcel(`StudioCafe_ItemSales_${itemExportChoice}_${todayFileStamp()}.xlsx`, 'Item Sales', rows);
+    toast.show('Exported!', 'success');
+  }
+
   async function handlePdfExport(fn: () => Promise<void>) {
     try {
       await fn();
@@ -192,6 +221,33 @@ export function ReportsPage() {
               </div>
             </div>
           ))}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-3">
+          <div className="flex flex-1 items-center gap-3">
+            <span className="text-sm font-medium text-ink">Item sales</span>
+            <Select value={itemExportChoice} onChange={(e) => setItemExportChoice(e.target.value)} className="max-w-[220px]">
+              <option value="">All items</option>
+              {(summary?.itemSales ?? []).map((i) => (
+                <option key={i.name} value={i.name}>
+                  {i.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="flex gap-1.5">
+            <Button size="sm" variant="secondary" onClick={handleExportItemSales}>
+              <Download className="size-3.5" />
+              Excel
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => handlePdfExport(() => openItemSalesReportPdf(from || undefined, to || undefined, itemExportChoice || undefined))}
+            >
+              <FileText className="size-3.5" />
+              PDF
+            </Button>
+          </div>
         </div>
       </Card>
 
@@ -265,25 +321,40 @@ export function ReportsPage() {
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card title="Top selling items">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs font-medium text-muted">
-                <th className="py-2.5 pr-3">Item</th>
-                <th className="py-2.5 pr-3">Qty</th>
-                <th className="py-2.5">Revenue</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(summary?.topItems ?? []).map((i) => (
-                <tr key={i.name} className="border-b border-border last:border-b-0">
-                  <td className="py-2.5 pr-3 font-medium text-ink">{i.name}</td>
-                  <td className="py-2.5 pr-3 text-muted">{i.qty}</td>
-                  <td className="py-2.5 text-ink">{money(i.revenue, currency, usdRate)}</td>
+        <Card title="Item sales report">
+          <div className="relative mb-3">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-2" />
+            <Input placeholder="Search item…" value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} className="pl-9" />
+          </div>
+          <div className="max-h-80 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs font-medium text-muted">
+                  <th className="py-2.5 pr-3">Item</th>
+                  <th className="py-2.5 pr-3">Qty</th>
+                  <th className="py-2.5">Revenue</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {(summary?.itemSales ?? [])
+                  .filter((i) => i.name.toLowerCase().includes(itemSearch.trim().toLowerCase()))
+                  .map((i) => (
+                    <tr key={i.name} className="border-b border-border last:border-b-0">
+                      <td className="py-2.5 pr-3 font-medium text-ink">{i.name}</td>
+                      <td className="py-2.5 pr-3 text-muted">{i.qty}</td>
+                      <td className="py-2.5 text-ink">{money(i.revenue, currency, usdRate)}</td>
+                    </tr>
+                  ))}
+                {(summary?.itemSales ?? []).length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="py-6 text-center text-sm text-muted">
+                      No sales in this range
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </Card>
 
         <Card title="Payment split & low stock">
@@ -370,7 +441,12 @@ export function ReportsPage() {
                         <Button size="sm" variant="secondary" onClick={() => openReceiptPdf(o.id)}>
                           <Printer className="size-3.5" />
                         </Button>
-                        {isAdmin && (
+                        {can('sales_edit') && (
+                          <Button size="sm" variant="secondary" onClick={() => setEditingOrder(o)}>
+                            <Pencil className="size-3.5" />
+                          </Button>
+                        )}
+                        {can('sales_delete') && (
                           <Button size="sm" variant="danger" onClick={() => setDeleteOrderId(o.id)}>
                             <X className="size-3.5" />
                           </Button>
@@ -410,7 +486,14 @@ export function ReportsPage() {
         danger
       />
 
-      <ManualSaleModal open={manualSaleOpen} onClose={() => setManualSaleOpen(false)} />
+      <ManualSaleModal
+        open={manualSaleOpen || !!editingOrder}
+        order={editingOrder}
+        onClose={() => {
+          setManualSaleOpen(false);
+          setEditingOrder(null);
+        }}
+      />
     </div>
   );
 }

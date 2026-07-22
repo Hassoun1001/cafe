@@ -18,13 +18,19 @@ function bucketKey(d: Date, groupBy: ReportGroupBy): string {
   return d.toISOString().slice(0, 10);
 }
 
-export async function reportsSummary(range: { from?: string; to?: string; groupBy?: ReportGroupBy }) {
-  // `to` is a date-only string (e.g. "2026-07-04" for "Today") — parsed
-  // directly it's midnight UTC, so a `lte` comparison against it would
-  // exclude nearly the entire day. Use the start of the *next* day with `lt`
-  // instead, so the given day is fully included.
+// `to` is a date-only string (e.g. "2026-07-04" for "Today") — parsed
+// directly it's midnight UTC, so a `lte` comparison against it would
+// exclude nearly the entire day. Use the start of the *next* day with `lt`
+// instead, so the given day is fully included. Shared by every report that
+// takes a from/to range so they all agree on what "today" means.
+function resolveDateRange(range: { from?: string; to?: string }) {
   const to = range.to ? endOfDayExclusive(range.to) : new Date();
   const from = range.from ? new Date(range.from) : new Date(to.getTime() - 13 * 24 * 60 * 60 * 1000);
+  return { from, to };
+}
+
+export async function reportsSummary(range: { from?: string; to?: string; groupBy?: ReportGroupBy }) {
+  const { from, to } = resolveDateRange(range);
   const groupBy = range.groupBy ?? 'day';
 
   const where: Prisma.OrderWhereInput = {
@@ -73,10 +79,13 @@ export async function reportsSummary(range: { from?: string; to?: string; groupB
       itemMap.set(i.nameSnapshot, entry);
     }
   }
-  const topItems = Array.from(itemMap.values())
+  // Full per-item breakdown for the whole range — lets the Reports page
+  // answer "how much did we sell of item X" for any item, not just the top
+  // sellers. `topItems` (below) is just this same data, sliced.
+  const itemSales = Array.from(itemMap.values())
     .map((e) => ({ ...e, revenue: round2(e.revenue) }))
-    .sort((a, b) => b.qty - a.qty)
-    .slice(0, 10);
+    .sort((a, b) => b.revenue - a.revenue);
+  const topItems = [...itemSales].sort((a, b) => b.qty - a.qty).slice(0, 10);
 
   const lowStockItems = await prisma.stockItem.findMany();
   const lowStock = lowStockItems
@@ -95,6 +104,73 @@ export async function reportsSummary(range: { from?: string; to?: string; groupB
     paymentSplit: { cash: cashTotal, card: cardTotal },
     trend,
     topItems,
+    itemSales,
     lowStock,
+  };
+}
+
+export interface ItemSalesReport {
+  range: { from: string; to: string };
+  item: string | null;
+  totalQty: number;
+  totalRevenue: number;
+  rows: { name: string; qty: number; revenue: number }[] | { date: string; qty: number; revenue: number }[];
+}
+
+// Backs the Reports page's "Item sales" export. With no `item`, returns the
+// same full per-item qty/revenue breakdown as `reportsSummary.itemSales`
+// (every item sold in the range). With `item`, narrows to that one item and
+// buckets it by day instead — a single qty/revenue row wouldn't be much of a
+// "report" on its own, so picking one item trades the item-by-item breadth
+// for a day-by-day trend of just that item.
+export async function itemSalesReport(range: { from?: string; to?: string }, item?: string): Promise<ItemSalesReport> {
+  const { from, to } = resolveDateRange(range);
+  const orders = await prisma.order.findMany({
+    where: { status: 'PAID', closedAt: { gte: from, lt: to } },
+    include: { items: true },
+  });
+
+  if (!item) {
+    const itemMap = new Map<string, { name: string; qty: number; revenue: number }>();
+    for (const o of orders) {
+      for (const i of o.items) {
+        const entry = itemMap.get(i.nameSnapshot) ?? { name: i.nameSnapshot, qty: 0, revenue: 0 };
+        entry.qty += i.qty;
+        entry.revenue += i.qty * toNum(i.priceSnapshot);
+        itemMap.set(i.nameSnapshot, entry);
+      }
+    }
+    const rows = Array.from(itemMap.values())
+      .map((e) => ({ ...e, revenue: round2(e.revenue) }))
+      .sort((a, b) => b.revenue - a.revenue);
+    return {
+      range: { from: from.toISOString(), to: to.toISOString() },
+      item: null,
+      rows,
+      totalQty: rows.reduce((s, r) => s + r.qty, 0),
+      totalRevenue: round2(rows.reduce((s, r) => s + r.revenue, 0)),
+    };
+  }
+
+  const dayMap = new Map<string, { date: string; qty: number; revenue: number }>();
+  for (const o of orders) {
+    if (!o.closedAt) continue;
+    for (const i of o.items.filter((i) => i.nameSnapshot === item)) {
+      const key = o.closedAt.toISOString().slice(0, 10);
+      const entry = dayMap.get(key) ?? { date: key, qty: 0, revenue: 0 };
+      entry.qty += i.qty;
+      entry.revenue += i.qty * toNum(i.priceSnapshot);
+      dayMap.set(key, entry);
+    }
+  }
+  const rows = Array.from(dayMap.values())
+    .map((e) => ({ ...e, revenue: round2(e.revenue) }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return {
+    range: { from: from.toISOString(), to: to.toISOString() },
+    item,
+    rows,
+    totalQty: rows.reduce((s, r) => s + r.qty, 0),
+    totalRevenue: round2(rows.reduce((s, r) => s + r.revenue, 0)),
   };
 }

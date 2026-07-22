@@ -9,7 +9,7 @@ export async function login(system: AppSystem, username: string, password: strin
   if (!user) throw unauthorized('Invalid username or password', 'INVALID_CREDENTIALS');
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) throw unauthorized('Invalid username or password', 'INVALID_CREDENTIALS');
-  return signSessionToken({ id: user.id, username: user.username, system: user.system, role: user.role });
+  return signSessionToken({ id: user.id, username: user.username, system: user.system, role: user.role, permissions: user.permissions });
 }
 
 export async function changeOwnPassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {

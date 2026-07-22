@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { authenticate, requireAdmin } from '../middleware/auth';
+import { authenticate, requirePermission } from '../middleware/auth';
 import {
   updateSettingsSchema,
   discountPresetSchema,
@@ -17,9 +17,10 @@ settingsRouter.use(authenticate);
 
 // GET endpoints stay open to any authenticated user — the POS/Warehouse/
 // Reports pages read currency, tax rates, discount presets, and stock
-// categories/units for their own normal operation. Only mutations (and the
-// Danger Zone) require admin; STAFF simply never sees the Settings page
-// itself on the frontend, so in practice they only ever hit these reads.
+// categories/units for their own normal operation. Mutations (and the Danger
+// Zone) are each gated behind their own permission key (see lib/permissions)
+// rather than a blanket requireAdmin — STAFF only sees the Settings page (or
+// a given card within it) if granted at least one of these.
 settingsRouter.get(
   '/',
   asyncHandler(async (_req, res) => {
@@ -29,7 +30,7 @@ settingsRouter.get(
 
 settingsRouter.patch(
   '/',
-  requireAdmin,
+  requirePermission('settings_general'),
   asyncHandler(async (req, res) => {
     const data = updateSettingsSchema.parse(req.body);
     res.json(await settingsService.updateSettings(data));
@@ -45,7 +46,7 @@ settingsRouter.get(
 
 settingsRouter.post(
   '/discount-presets',
-  requireAdmin,
+  requirePermission('discounts_manage'),
   asyncHandler(async (req, res) => {
     const data = discountPresetSchema.parse(req.body);
     res.status(201).json(await settingsService.createDiscountPreset(data));
@@ -54,7 +55,7 @@ settingsRouter.post(
 
 settingsRouter.put(
   '/discount-presets/:id',
-  requireAdmin,
+  requirePermission('discounts_manage'),
   asyncHandler(async (req, res) => {
     const data = updateDiscountPresetSchema.parse(req.body);
     res.json(await settingsService.updateDiscountPreset(req.params.id, data));
@@ -63,7 +64,7 @@ settingsRouter.put(
 
 settingsRouter.delete(
   '/discount-presets/:id',
-  requireAdmin,
+  requirePermission('discounts_manage'),
   asyncHandler(async (req, res) => {
     await settingsService.deleteDiscountPreset(req.params.id);
     res.status(204).end();
@@ -79,7 +80,7 @@ settingsRouter.get(
 
 settingsRouter.post(
   '/tax-rates',
-  requireAdmin,
+  requirePermission('tax_manage'),
   asyncHandler(async (req, res) => {
     const data = taxRateSchema.parse(req.body);
     res.status(201).json(await settingsService.createTaxRate(data));
@@ -88,7 +89,7 @@ settingsRouter.post(
 
 settingsRouter.put(
   '/tax-rates/:id',
-  requireAdmin,
+  requirePermission('tax_manage'),
   asyncHandler(async (req, res) => {
     const data = updateTaxRateSchema.parse(req.body);
     res.json(await settingsService.updateTaxRate(req.params.id, data));
@@ -97,7 +98,7 @@ settingsRouter.put(
 
 settingsRouter.delete(
   '/tax-rates/:id',
-  requireAdmin,
+  requirePermission('tax_manage'),
   asyncHandler(async (req, res) => {
     await settingsService.deleteTaxRate(req.params.id);
     res.status(204).end();
@@ -113,7 +114,7 @@ settingsRouter.get(
 
 settingsRouter.post(
   '/stock-categories',
-  requireAdmin,
+  requirePermission('stock_catalog_manage'),
   asyncHandler(async (req, res) => {
     const { name } = stockCategorySchema.parse(req.body);
     res.status(201).json(await settingsService.createStockCategory(name));
@@ -122,7 +123,7 @@ settingsRouter.post(
 
 settingsRouter.delete(
   '/stock-categories/:id',
-  requireAdmin,
+  requirePermission('stock_catalog_manage'),
   asyncHandler(async (req, res) => {
     await settingsService.deleteStockCategory(req.params.id);
     res.status(204).end();
@@ -138,7 +139,7 @@ settingsRouter.get(
 
 settingsRouter.post(
   '/stock-units',
-  requireAdmin,
+  requirePermission('stock_catalog_manage'),
   asyncHandler(async (req, res) => {
     const { name } = stockUnitSchema.parse(req.body);
     res.status(201).json(await settingsService.createStockUnit(name));
@@ -147,7 +148,7 @@ settingsRouter.post(
 
 settingsRouter.delete(
   '/stock-units/:id',
-  requireAdmin,
+  requirePermission('stock_catalog_manage'),
   asyncHandler(async (req, res) => {
     await settingsService.deleteStockUnit(req.params.id);
     res.status(204).end();
@@ -156,7 +157,7 @@ settingsRouter.delete(
 
 settingsRouter.post(
   '/danger/clear-sales',
-  requireAdmin,
+  requirePermission('danger_zone'),
   asyncHandler(async (_req, res) => {
     await settingsService.clearSales();
     res.json({ ok: true });
@@ -165,7 +166,7 @@ settingsRouter.post(
 
 settingsRouter.post(
   '/danger/clear-employee-log',
-  requireAdmin,
+  requirePermission('danger_zone'),
   asyncHandler(async (_req, res) => {
     await settingsService.clearEmployeeLog();
     res.json({ ok: true });
@@ -174,7 +175,7 @@ settingsRouter.post(
 
 settingsRouter.post(
   '/danger/reset-all',
-  requireAdmin,
+  requirePermission('danger_zone'),
   asyncHandler(async (_req, res) => {
     await settingsService.resetAll();
     res.json({ ok: true });

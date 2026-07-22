@@ -10,6 +10,7 @@ import type {
   RecipeIngredientDto,
   ReportGroupBy,
   ReportsSummaryDto,
+  ItemSalesReportDto,
   SettingsDto,
   StockCategoryDto,
   StockItemDto,
@@ -19,6 +20,7 @@ import type {
   TrackerRowDto,
   UserDto,
   UserRole,
+  PermissionDefDto,
   ImportResultDto,
 } from '../types';
 
@@ -29,9 +31,10 @@ export const changePassword = (currentPassword: string, newPassword: string) =>
 
 // Users (Cafe system accounts)
 export const getUsers = () => api.get<UserDto[]>('/users').then((r) => r.data);
-export const createUser = (username: string, password: string, role: UserRole = 'STAFF') =>
-  api.post<UserDto>('/users', { username, password, role }).then((r) => r.data);
-export const updateUser = (id: string, data: Partial<{ username: string; active: boolean; role: UserRole }>) =>
+export const getPermissionCatalog = () => api.get<PermissionDefDto[]>('/users/permissions').then((r) => r.data);
+export const createUser = (username: string, password: string, role: UserRole = 'STAFF', permissions: string[] = []) =>
+  api.post<UserDto>('/users', { username, password, role, permissions }).then((r) => r.data);
+export const updateUser = (id: string, data: Partial<{ username: string; active: boolean; role: UserRole; permissions: string[] }>) =>
   api.put<UserDto>(`/users/${id}`, data).then((r) => r.data);
 export const resetUserPassword = (id: string, newPassword: string) => api.post(`/users/${id}/reset-password`, { newPassword }).then((r) => r.data);
 export const deleteUser = (id: string) => api.delete(`/users/${id}`);
@@ -89,7 +92,7 @@ export const setOrderTaxManualAmount = (orderId: string, taxRateId: string, manu
 export const payOrder = (orderId: string, method: 'CASH' | 'CARD', cashReceived?: number) =>
   api.post<OrderDto>(`/orders/${orderId}/pay`, { method, cashReceived }).then((r) => r.data);
 export const clearOrder = (orderId: string) => api.delete(`/orders/${orderId}`);
-export const createManualOrder = (data: {
+interface ManualOrderInput {
   tableId: string;
   items: { menuItemId?: string; name: string; price: number; qty: number }[];
   discountPercent?: number;
@@ -97,7 +100,10 @@ export const createManualOrder = (data: {
   paymentMethod: 'CASH' | 'CARD';
   cashReceived?: number;
   closedAt: string;
-}) => api.post<OrderDto>('/orders/manual', data).then((r) => r.data);
+}
+export const createManualOrder = (data: ManualOrderInput) => api.post<OrderDto>('/orders/manual', data).then((r) => r.data);
+export const updateManualOrder = (orderId: string, data: ManualOrderInput) =>
+  api.put<OrderDto>(`/orders/${orderId}/manual`, data).then((r) => r.data);
 export const getSalesHistory = (params: {
   from?: string;
   to?: string;
@@ -154,6 +160,8 @@ export const deleteConsumption = (id: string) => api.delete(`/employees/consumpt
 // Reports
 export const getReportsSummary = (from?: string, to?: string, groupBy?: ReportGroupBy) =>
   api.get<ReportsSummaryDto>('/reports/summary', { params: { from, to, groupBy } }).then((r) => r.data);
+export const getItemSalesReport = (from?: string, to?: string, item?: string) =>
+  api.get<ItemSalesReportDto>('/reports/items', { params: { from, to, item } }).then((r) => r.data);
 
 // Settings
 export const getSettings = () => api.get<SettingsDto>('/settings').then((r) => r.data);

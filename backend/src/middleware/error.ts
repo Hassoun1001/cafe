@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
+import multer from 'multer';
 import { AppError } from '../lib/errors';
 import { config } from '../config';
 
@@ -23,6 +24,16 @@ export function errorMiddleware(err: unknown, _req: Request, res: Response, _nex
         details: err.flatten(),
       },
     });
+    return;
+  }
+
+  // Thrown by multer's upload middleware (e.g. exceeding the fileSize limit)
+  // before the route handler even runs — without this it fell through to the
+  // generic 500 below with no useful message, which is what forced splitting
+  // an oversized upload into smaller files just to find out why it failed.
+  if (err instanceof multer.MulterError) {
+    const message = err.code === 'LIMIT_FILE_SIZE' ? 'File is too large — the limit is 25MB' : err.message;
+    res.status(400).json({ error: { message, code: err.code } });
     return;
   }
 

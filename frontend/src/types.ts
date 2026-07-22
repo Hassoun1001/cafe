@@ -146,7 +146,16 @@ export interface ReportsSummaryDto {
   paymentSplit: { cash: number; card: number };
   trend: { date: string; total: number }[];
   topItems: { name: string; qty: number; revenue: number }[];
+  itemSales: { name: string; qty: number; revenue: number }[];
   lowStock: { id: string; name: string; qty: number; unit: string; minQty: number }[];
+}
+
+export interface ItemSalesReportDto {
+  range: { from: string; to: string };
+  item: string | null;
+  totalQty: number;
+  totalRevenue: number;
+  rows: { name: string; qty: number; revenue: number }[] | { date: string; qty: number; revenue: number }[];
 }
 
 export interface SettingsDto {
@@ -199,8 +208,18 @@ export interface UserDto {
   id: string;
   username: string;
   role: UserRole;
+  permissions: string[];
   active: boolean;
   createdAt: string;
+}
+
+// One grantable action from the permission catalog — see PermissionDef in
+// backend/src/lib/permissions.ts (fetched via GET /users/permissions or
+// /study/users/permissions, not hardcoded here, so the two stay in sync).
+export interface PermissionDefDto {
+  key: string;
+  label: string;
+  group: string;
 }
 
 export interface ImportResultDto {

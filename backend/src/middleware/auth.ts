@@ -14,7 +14,12 @@ function authenticateFor(system: AppSystem): RequestHandler {
     if (!payload || payload.system !== system) {
       throw unauthorized('Session expired or invalid, please log in again', 'INVALID_SESSION');
     }
-    req.user = { id: payload.sub, username: payload.username, system: payload.system, role: payload.role };
+    // Older tokens signed before permissions existed simply won't have the
+    // claim — treat that the same as "no permissions granted" rather than
+    // crashing, so already-logged-in sessions don't break the moment this
+    // deploys; they just don't get any permission-gated access until they
+    // log in again and get a token with the claim.
+    req.user = { id: payload.sub, username: payload.username, system: payload.system, role: payload.role, permissions: payload.permissions ?? [] };
     next();
   };
 }
@@ -35,3 +40,19 @@ export const requireAdmin: RequestHandler = (req, _res, next) => {
   }
   next();
 };
+
+// Finer-grained than requireAdmin — ADMIN always passes regardless of the
+// key; a STAFF account only passes if this specific key is in their granted
+// permissions list (see lib/permissions.ts for the full catalog and the
+// Team Access checkbox matrix in Settings/StudySettings where they're
+// assigned). Use this instead of requireAdmin on any route where staff
+// should be individually grantable access rather than all-or-nothing.
+export function requirePermission(key: string): RequestHandler {
+  return (req, _res, next) => {
+    if (req.user?.role === 'ADMIN' || req.user?.permissions.includes(key)) {
+      next();
+      return;
+    }
+    throw forbidden("You don't have permission to do this", 'PERMISSION_REQUIRED');
+  };
+}

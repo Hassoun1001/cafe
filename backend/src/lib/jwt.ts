@@ -7,12 +7,21 @@ export interface SessionPayload {
   username: string;
   system: AppSystem;
   role: UserRole;
+  permissions: string[];
 }
 
-export function signSessionToken(user: { id: string; username: string; system: AppSystem; role: UserRole }): string {
-  return jwt.sign({ sub: user.id, username: user.username, system: user.system, role: user.role }, config.jwtSecret, {
-    expiresIn: config.jwtExpiresIn,
-  } as jwt.SignOptions);
+export function signSessionToken(user: {
+  id: string;
+  username: string;
+  system: AppSystem;
+  role: UserRole;
+  permissions: string[];
+}): string {
+  return jwt.sign(
+    { sub: user.id, username: user.username, system: user.system, role: user.role, permissions: user.permissions },
+    config.jwtSecret,
+    { expiresIn: config.jwtExpiresIn } as jwt.SignOptions,
+  );
 }
 
 export function verifySessionToken(token: string): SessionPayload | null {

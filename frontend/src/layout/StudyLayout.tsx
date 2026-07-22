@@ -9,10 +9,10 @@ const NAV = [
   { to: '/study/settings', label: 'Settings', icon: SettingsIcon, adminOnly: true },
 ];
 
-function NavItems({ onNavigate, isAdmin }: { onNavigate?: () => void; isAdmin: boolean }) {
+function NavItems({ onNavigate, canSeeSettings }: { onNavigate?: () => void; canSeeSettings: boolean }) {
   return (
     <>
-      {NAV.filter((item) => !item.adminOnly || isAdmin).map((item) => (
+      {NAV.filter((item) => !item.adminOnly || canSeeSettings).map((item) => (
         <NavLink
           key={item.to}
           to={item.to}
@@ -33,7 +33,8 @@ function NavItems({ onNavigate, isAdmin }: { onNavigate?: () => void; isAdmin: b
 }
 
 export function StudyLayout() {
-  const { logout, isAdmin } = useStudyAuth();
+  const { logout, isAdmin, permissions } = useStudyAuth();
+  const canSeeSettings = isAdmin || permissions.length > 0;
 
   return (
     <div className="min-h-screen lg:flex">
@@ -48,7 +49,7 @@ export function StudyLayout() {
           </div>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 px-3">
-          <NavItems isAdmin={isAdmin} />
+          <NavItems canSeeSettings={canSeeSettings} />
         </nav>
         <div className="border-t border-border p-3">
           <button
@@ -75,7 +76,7 @@ export function StudyLayout() {
           </button>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-2.5">
-          {NAV.filter((item) => !item.adminOnly || isAdmin).map((item) => (
+          {NAV.filter((item) => !item.adminOnly || canSeeSettings).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

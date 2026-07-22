@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { authenticate, requireAdmin } from '../middleware/auth';
+import { authenticate, requirePermission } from '../middleware/auth';
 import { createStockSchema, adjustStockSchema, updateStockSchema } from '../schemas/stock.schema';
 import * as stockService from '../services/stock.service';
 
@@ -50,7 +50,7 @@ stockRouter.patch(
 
 stockRouter.delete(
   '/:id',
-  requireAdmin,
+  requirePermission('stock_delete'),
   asyncHandler(async (req, res) => {
     await stockService.deleteStockItem(req.params.id);
     res.status(204).end();

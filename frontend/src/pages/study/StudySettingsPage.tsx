@@ -6,16 +6,19 @@ import { useToast } from '../../lib/toast';
 import { apiErrorMessage } from '../../lib/api';
 import { useStudyAuth } from '../../lib/studyAuth';
 import { Badge, Button, Card, ConfirmModal, Input, Label, Modal, PageHeader, Select } from '../../components/ui';
+import { PermissionMatrix } from '../../components/PermissionMatrix';
 import type { UserRole } from '../../types';
 
 export function StudySettingsPage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const { logout } = useStudyAuth();
+  const { logout, can } = useStudyAuth();
 
   const configQuery = useQuery({ queryKey: ['study', 'config'], queryFn: api.getConfig });
   const resourcesQuery = useQuery({ queryKey: ['study', 'resources'], queryFn: api.getResources });
   const usersQuery = useQuery({ queryKey: ['study', 'users'], queryFn: api.getUsers });
+  const permCatalogQuery = useQuery({ queryKey: ['study', 'permissions'], queryFn: api.getPermissionCatalog });
+  const permCatalog = permCatalogQuery.data ?? [];
 
   // --- hourly rate ---
   const updateConfig = useMutation({
@@ -60,16 +63,20 @@ export function StudySettingsPage() {
   const [newUsername, setNewUsername] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('STAFF');
+  const [newUserPermissions, setNewUserPermissions] = useState<string[]>([]);
   const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null);
   const [resetPasswordValue, setResetPasswordValue] = useState('');
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
+  const [permissionsUserId, setPermissionsUserId] = useState<string | null>(null);
+  const [editingPermissions, setEditingPermissions] = useState<string[]>([]);
   const createUser = useMutation({
-    mutationFn: () => api.createUser(newUsername.trim(), newUserPassword, newUserRole),
+    mutationFn: () => api.createUser(newUsername.trim(), newUserPassword, newUserRole, newUserPermissions),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['study', 'users'] });
       setNewUsername('');
       setNewUserPassword('');
       setNewUserRole('STAFF');
+      setNewUserPermissions([]);
       toast.show('User added', 'success');
     },
     onError: (e) => toast.show(apiErrorMessage(e), 'error'),
@@ -82,6 +89,15 @@ export function StudySettingsPage() {
   const changeUserRole = useMutation({
     mutationFn: (vars: { id: string; role: UserRole }) => api.updateUser(vars.id, { role: vars.role }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['study', 'users'] }),
+    onError: (e) => toast.show(apiErrorMessage(e), 'error'),
+  });
+  const saveUserPermissions = useMutation({
+    mutationFn: () => api.updateUser(permissionsUserId as string, { permissions: editingPermissions }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['study', 'users'] });
+      setPermissionsUserId(null);
+      toast.show('Permissions saved', 'success');
+    },
     onError: (e) => toast.show(apiErrorMessage(e), 'error'),
   });
   const resetUserPassword = useMutation({
@@ -141,6 +157,7 @@ export function StudySettingsPage() {
     <div>
       <PageHeader title="Settings" description="Hourly rate, resources, and team access for the Study system." />
 
+      {can('study_config_manage') && (
       <Card title="Pricing">
         <div className="flex items-center justify-between border-b border-border py-3.5 first:pt-0">
           <div>
@@ -178,7 +195,9 @@ export function StudySettingsPage() {
           />
         </div>
       </Card>
+      )}
 
+      {can('study_resources_manage') && (
       <Card title="Tables & rooms">
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div className="w-28">
@@ -226,7 +245,9 @@ export function StudySettingsPage() {
           {(resourcesQuery.data ?? []).length === 0 && <div className="py-2 text-sm text-muted">No resources yet</div>}
         </div>
       </Card>
+      )}
 
+      {can('study_users_manage') && (
       <Card title="Team access">
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div className="min-w-[160px]">
@@ -258,6 +279,12 @@ export function StudySettingsPage() {
             Add user
           </Button>
         </div>
+        {newUserRole === 'STAFF' && permCatalog.length > 0 && (
+          <div className="mb-4">
+            <Label>Permissions (Staff only — Admin always has full access)</Label>
+            <PermissionMatrix catalog={permCatalog} selected={newUserPermissions} onChange={setNewUserPermissions} />
+          </div>
+        )}
         <div>
           {(usersQuery.data ?? []).map((u) => (
             <div key={u.id} className="flex items-center justify-between border-b border-border py-2.5 last:border-b-0">
@@ -265,6 +292,7 @@ export function StudySettingsPage() {
                 {u.username}
                 <Badge tone={u.role === 'ADMIN' ? 'amber' : 'gray'}>{u.role === 'ADMIN' ? 'Admin' : 'Staff'}</Badge>
                 <Badge tone={u.active ? 'green' : 'gray'}>{u.active ? 'Active' : 'Disabled'}</Badge>
+                {u.role === 'STAFF' && u.permissions.length > 0 && <Badge tone="blue">{u.permissions.length} permission{u.permissions.length === 1 ? '' : 's'}</Badge>}
               </span>
               <div className="flex items-center gap-1.5">
                 <Select
@@ -275,6 +303,18 @@ export function StudySettingsPage() {
                   <option value="STAFF">Staff</option>
                   <option value="ADMIN">Admin</option>
                 </Select>
+                {u.role === 'STAFF' && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setPermissionsUserId(u.id);
+                      setEditingPermissions(u.permissions);
+                    }}
+                  >
+                    Permissions
+                  </Button>
+                )}
                 <Button size="sm" variant="secondary" onClick={() => toggleUserActive.mutate({ id: u.id, active: !u.active })}>
                   {u.active ? 'Disable' : 'Enable'}
                 </Button>
@@ -290,6 +330,7 @@ export function StudySettingsPage() {
           {(usersQuery.data ?? []).length === 0 && <div className="py-2 text-sm text-muted">No users yet</div>}
         </div>
       </Card>
+      )}
 
       <Card title="Security">
         <div className="flex items-center justify-between border-b border-border py-3.5 first:pt-0">
@@ -348,6 +389,18 @@ export function StudySettingsPage() {
             Save
           </Button>
           <Button variant="secondary" onClick={() => setResetPasswordUserId(null)}>
+            Cancel
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!permissionsUserId} onClose={() => setPermissionsUserId(null)} title="Edit permissions" maxWidth="600px">
+        <PermissionMatrix catalog={permCatalog} selected={editingPermissions} onChange={setEditingPermissions} />
+        <div className="mt-5 flex gap-2">
+          <Button variant="primary" className="flex-1" onClick={() => saveUserPermissions.mutate()}>
+            Save
+          </Button>
+          <Button variant="secondary" onClick={() => setPermissionsUserId(null)}>
             Cancel
           </Button>
         </div>

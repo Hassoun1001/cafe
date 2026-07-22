@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { authenticateStudy, requireAdmin } from '../middleware/auth';
+import { authenticateStudy, requirePermission } from '../middleware/auth';
 import { updateStudyConfigSchema } from '../schemas/study.schema';
 import * as studyConfigService from '../services/studyConfig.service';
 
@@ -18,7 +18,7 @@ studyConfigRouter.get(
 
 studyConfigRouter.patch(
   '/',
-  requireAdmin,
+  requirePermission('study_config_manage'),
   asyncHandler(async (req, res) => {
     const data = updateStudyConfigSchema.parse(req.body);
     res.json(await studyConfigService.updateStudyConfig(data));
